@@ -1,2 +1,10 @@
-﻿  sceneSpeedrunner.cpp
+﻿  main.cpp
+C:\Users\Morgan\Documents\GitHub\COMP3015-CW2\main.cpp(238,17): warning C4244: '=': conversion from 'double' to 'float', possible loss of data
+C:\Users\Morgan\Documents\GitHub\COMP3015-CW2\main.cpp(239,17): warning C4244: '=': conversion from 'double' to 'float', possible loss of data
+C:\Users\Morgan\Documents\GitHub\COMP3015-CW2\main.cpp(244,19): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
+C:\Users\Morgan\Documents\GitHub\COMP3015-CW2\main.cpp(245,19): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
+C:\Users\Morgan\Documents\GitHub\COMP3015-CW2\main.cpp(247,13): warning C4244: '=': conversion from 'double' to 'float', possible loss of data
+C:\Users\Morgan\Documents\GitHub\COMP3015-CW2\main.cpp(248,13): warning C4244: '=': conversion from 'double' to 'float', possible loss of data
+C:\Users\Morgan\Documents\GitHub\COMP3015-CW2\main.cpp(779,28): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
+C:\Users\Morgan\Documents\GitHub\COMP3015-CW2\main.cpp(840,23): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
   Project_Template.vcxproj -> C:\Users\Morgan\Documents\GitHub\COMP3015-CW2\x64\Debug\Project_Template.exe

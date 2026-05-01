@@ -78,13 +78,13 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>$(ProjectDir)dependencies\GLAD\include;$(ProjectDir)dependencies\GLFW\include;$(ProjectDir)dependencies\GLM;$(IncludePath)</IncludePath>
-    <LibraryPath>$(ProjectDir)dependencies\GLFW\lib-vc2022;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(ProjectDir)dependencies\freetype\include;$(ProjectDir)dependencies\GLAD\include;$(ProjectDir)dependencies\GLFW\include;$(ProjectDir)dependencies\GLM;C:\Users\Public\OpenGL\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)dependencies\freetype\release static\vs2017-2026\x64;$(ProjectDir)dependencies\GLFW\lib-vc2022;C:\Users\Public\OpenGL\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>$(ProjectDir)dependencies\GLAD\include;$(ProjectDir)dependencies\GLFW\include;$(ProjectDir)dependencies\GLM;$(IncludePath)</IncludePath>
-    <LibraryPath>$(ProjectDir)dependencies\GLFW\lib-vc2022;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(ProjectDir)dependencies\freetype\include;$(ProjectDir)dependencies\GLAD\include;$(ProjectDir)dependencies\GLFW\include;$(ProjectDir)dependencies\GLM;C:\Dependencies\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)dependencies\freetype\release static\vs2017-2026\x64;$(ProjectDir)dependencies\GLFW\lib-vc2022;C:\Dependencies\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -124,7 +124,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>glfw3.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>glfw3.lib;glfw3_mt.lib;freetype.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -141,7 +141,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>glfw3.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>glfw3.lib;glfw3_mt.lib;freetype.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -150,17 +150,20 @@
     <ClCompile Include="helper\glutils.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="scenebasic_uniform.cpp" />
-    <ClCompile Include="sceneSpeedrunner.cpp" />
+    <ClCompile Include="Mesh.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="shader\basic_uniform.frag" />
     <None Include="shader\basic_uniform.vert" />
-    <None Include="shader\bloom.frag" />
-    <None Include="shader\bloom.vert" />
-    <None Include="shader\particle.frag" />
-    <None Include="shader\particle.vert" />
-    <None Include="shader\scene.frag" />
-    <None Include="shader\scene.vert" />
+    <None Include="shader\emissive.frag" />
+    <None Include="shader\emissive.vert" />
+    <None Include="shader\screen.frag" />
+    <None Include="shader\screen.vert" />
+    <none Include="shader\bloom.frag" />
+    <none Include="shader\blur.frag" />
+    <none Include="shader\brightpass.frag" />
+    <none Include="shader\fire.frag" />
+    <none Include="shader\fire.vert" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="helper\glslprogram.h" />
@@ -170,7 +173,8 @@
     <ClInclude Include="helper\stb\stb_image.h" />
     <ClInclude Include="helper\stb\stb_image_write.h" />
     <ClInclude Include="scenebasic_uniform.h" />
-    <ClInclude Include="sceneSpeedrunner.h" />
+    <ClInclude Include="Mesh.h" />
+    <ClInclude Include="Plane.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

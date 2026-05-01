@@ -1,0 +1,38 @@
+# Visual Studio
+.vs/
+*.VC.db
+*.VC.VC.opendb
+*.user
+*.suo
+
+# Build outputs
+x64/
+Project_Template/
+Debug/
+Release/
+
+# MSBuild / intermediates
+*.ilk
+*.ipdb
+*.iobj
+*.idb
+*.pdb
+*.obj
+*.log
+*.tlog/
+*.lastbuildstate
+*.recipe
+*.aps
+
+# Binaries
+*.exe
+*.exp
+
+# CMake / generated files
+CMakeFiles/
+CMakeCache.txt
+cmake-build-*/
+
+# OS files
+Thumbs.db
+Desktop.ini
