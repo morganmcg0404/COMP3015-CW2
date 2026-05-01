@@ -37,3 +37,5 @@ cmake-build-*/
 # OS files
 Thumbs.db
 Desktop.ini
+
+!dependencies/freetype/release static/vs2017-2026/x64/
