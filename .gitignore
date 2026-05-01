@@ -4,6 +4,7 @@
 *.VC.VC.opendb
 *.user
 *.suo
+*.db
 
 # Build outputs
 x64/

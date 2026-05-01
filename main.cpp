@@ -4,7 +4,6 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <iostream>
-#include <algorithm>
 #include <vector>
 #include <cstdlib>
 #include <ctime>
@@ -19,11 +18,17 @@
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void updatePlayerController();
 void spawnFireExplosion(const glm::vec3& position);
+void spawnRandomEnemy();
 float randFloat();
+void setPaused(GLFWwindow* window, bool paused);
+
+// Resolution constants
+const int windowWidth = 1920;
+const int windowHeight = 1080;
 
 // Camera
-float lastX = 800 / 2.0f;
-float lastY = 600 / 2.0f;
+float lastX = windowWidth / 2.0f;
+float lastY = windowHeight / 2.0f;
 float yaw = -90.0f;
 float pitch = 0.0f;
 float fov = 45.0f;
@@ -43,9 +48,21 @@ bool playerGrounded = true;
 
 float playerMana = 100.0f;
 const float playerMaxMana = 100.0f;
-const float fireballManaCost = 20.0f;
-const float enemyKillManaGain = 25.0f;
-const float playerManaRegenRate = 8.0f;
+const float fireballManaCost = 10.0f;
+const float playerManaRegenRate = 15.0f;
+
+float playerHealth = 100.0f;
+const float playerMaxHealth = 100.0f;
+const float enemyDamageDelay = 0.5f;  // Time enemy must be in range before damage
+const float enemyDamageAmount = 5.0f;  // Damage per hit
+const float enemyDamageInterval = 1.0f;  // How often damage is dealt if in range
+
+int playerScore = 0;
+
+bool gamePaused = false;
+bool pauseKeyPressed = false;
+bool pauseClickPressed = false;
+glm::vec2 mousePosition = glm::vec2(0.0f);
 
 bool firstMouse = true;
 bool bloomEnabled = true;
@@ -101,6 +118,8 @@ struct Enemy {
     float radius = 0.6f;
     float health = 3.0f;
     float moveSpeed = 2.2f;
+    float proximityTime = 0.0f;  // How long enemy has been in damage range
+    float lastDamageTime = -1.0f;  // When damage was last dealt
 };
 
 std::vector<Enemy> enemies;
@@ -108,6 +127,11 @@ std::vector<Enemy> enemies;
 // Timing
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
+float gameTime = 0.0f;
+float enemySpawnAccumulator = 0.0f;
+const float initialEnemySpawnInterval = 8.0f;
+const float minEnemySpawnInterval = 1.5f;
+const float enemySpawnRampRate = 0.025f;
 
 unsigned int hdrFBO;
 unsigned int colorBuffer;
@@ -120,8 +144,45 @@ unsigned int pingpongColorbuffers[2];
 // -------- Input --------
 void processInput(GLFWwindow *window)
 {
-    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-        glfwSetWindowShouldClose(window, true);
+    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !pauseKeyPressed)
+    {
+        setPaused(window, !gamePaused);
+        pauseKeyPressed = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_RELEASE)
+        pauseKeyPressed = false;
+
+    double cursorX = 0.0;
+    double cursorY = 0.0;
+    glfwGetCursorPos(window, &cursorX, &cursorY);
+    mousePosition = glm::vec2(static_cast<float>(cursorX) / static_cast<float>(windowWidth),
+                              1.0f - static_cast<float>(cursorY) / static_cast<float>(windowHeight));
+
+    if (gamePaused)
+    {
+        bool leftClick = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+        if (leftClick && !pauseClickPressed)
+        {
+            pauseClickPressed = true;
+
+            const glm::vec2 resumeMin(0.42f, 0.53f);
+            const glm::vec2 resumeMax(0.58f, 0.61f);
+            const glm::vec2 quitMin(0.42f, 0.41f);
+            const glm::vec2 quitMax(0.58f, 0.49f);
+
+            if (mousePosition.x >= resumeMin.x && mousePosition.x <= resumeMax.x && mousePosition.y >= resumeMin.y && mousePosition.y <= resumeMax.y)
+            {
+                setPaused(window, false);
+            }
+            else if (mousePosition.x >= quitMin.x && mousePosition.x <= quitMax.x && mousePosition.y >= quitMin.y && mousePosition.y <= quitMax.y)
+            {
+                glfwSetWindowShouldClose(window, true);
+            }
+        }
+        if (!leftClick)
+            pauseClickPressed = false;
+        return;
+    }
 
     float moveSpeed = playerMoveSpeed;
     if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS)
@@ -147,6 +208,31 @@ void processInput(GLFWwindow *window)
 
     if (glm::length(moveDirection) > 0.0001f)
         playerPosition += glm::normalize(moveDirection) * moveSpeed * deltaTime;
+
+    // Player-enemy collision detection
+    const float playerRadius = 0.5f;
+    for (auto& enemy : enemies)
+    {
+        if (!enemy.active)
+            continue;
+
+        glm::vec3 toEnemy = enemy.position - playerPosition;
+        float distance = glm::length(toEnemy);
+        float minDistance = playerRadius + enemy.radius;
+
+        if (distance < minDistance && distance > 0.001f)
+        {
+            // Push player away from enemy
+            glm::vec3 pushDirection = glm::normalize(toEnemy);
+            playerPosition -= pushDirection * (minDistance - distance);
+        }
+    }
+
+    // Clamp player position to arena bounds
+    const float arenaMin = -50.0f;
+    const float arenaMax = 50.0f;
+    playerPosition.x = glm::clamp(playerPosition.x, arenaMin + playerRadius, arenaMax - playerRadius);
+    playerPosition.z = glm::clamp(playerPosition.z, arenaMin + playerRadius, arenaMax - playerRadius);
 
     if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS && playerGrounded && !jumpKeyPressed)
     {
@@ -222,39 +308,59 @@ void processInput(GLFWwindow *window)
         fireballKeyPressed = true;
 
         if (playerMana < fireballManaCost)
-        {
-            std::cout << "Not enough mana!" << std::endl;
-        }
-        else
-        {
-            playerMana = std::max(0.0f, playerMana - fireballManaCost);
+            return;
 
-            Fireball fireball;
-            fireball.active = true;
-            glm::vec3 cameraRight = glm::normalize(glm::cross(cameraFront, cameraUp));
-            glm::vec3 cameraDown = -cameraUp;
+        playerMana = std::max(0.0f, playerMana - fireballManaCost);
+        
+        // Calculate right and down vectors for bottom-right spawn position
+        glm::vec3 right = glm::normalize(glm::cross(cameraFront, cameraUp));
+        glm::vec3 down = -cameraUp;
+        
+        Fireball fireball;
+        fireball.active = true;
+        // Spawn from bottom-right of camera
+        fireball.position = cameraPos + cameraFront * 0.5f + right * 0.4f + down * 0.3f;
+        
+        // Calculate target point ahead on the crosshair (camera front direction)
+        // Aim directly at center - the spawn offset naturally steers it correctly
+        glm::vec3 targetPoint = cameraPos + cameraFront * 30.0f;
+        
+        // Calculate direction from spawn to target
+        glm::vec3 direction = glm::normalize(targetPoint - fireball.position);
+        fireball.velocity = direction * 50.0f;
+        
+        fireball.life = 0.0f;
+        fireball.lastTrailEmit = 0.0f;
 
-            fireball.position = cameraPos + cameraFront * 0.7f + cameraRight * 0.45f + cameraDown * 0.35f;
-            glm::vec3 targetPoint = cameraPos + cameraFront * 20.0f;
-            fireball.velocity = glm::normalize(targetPoint - fireball.position) * 37.5f;
-            fireball.life = 0.0f;
-            fireball.lastTrailEmit = 0.0f;
-
-            std::cout << "Thrown fireball from: " << fireball.position.x << ", " << fireball.position.y << ", " << fireball.position.z << std::endl;
-            std::cout << "Mana: " << playerMana << std::endl;
-            fireballs.push_back(fireball);
-        }
+        std::cout << "Thrown fireball from: " << fireball.position.x << ", " << fireball.position.y << ", " << fireball.position.z << std::endl;
+        fireballs.push_back(fireball);
     }
     if (glfwGetKey(window, GLFW_KEY_F) == GLFW_RELEASE)
         fireballKeyPressed = false;
 }
 
+void setPaused(GLFWwindow* window, bool paused)
+{
+    gamePaused = paused;
+    firstMouse = true;
+    pauseClickPressed = false;
+    fireballKeyPressed = false;
+    jumpKeyPressed = false;
+    bloomKeyPressed = false;
+    vignetteKeyPressed = false;
+    bloomStrengthUpPressed = false;
+    bloomStrengthDownPressed = false;
+    brightThresholdUpPressed = false;
+    brightThresholdDownPressed = false;
+    glfwSetInputMode(window, GLFW_CURSOR, paused ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+}
+
 void updatePlayerController()
 {
+    playerMana = std::min(playerMaxMana, playerMana + playerManaRegenRate * deltaTime);
+
     playerVelocity.y -= playerGravity * deltaTime;
     playerPosition += playerVelocity * deltaTime;
-
-    playerMana = std::min(playerMaxMana, playerMana + playerManaRegenRate * deltaTime);
 
     if (playerPosition.y <= 0.0f)
     {
@@ -290,6 +396,45 @@ void spawnFireExplosion(const glm::vec3& position)
     glBufferSubData(GL_ARRAY_BUFFER, 0, gpuData.size() * sizeof(float), gpuData.data());
 }
 
+void spawnRandomEnemy(Enemy& enemy)
+{
+    const float arenaMin = -50.0f;
+    const float arenaMax = 50.0f;
+    const float spawnOffset = 2.0f;
+    const float minDistanceFromPlayer = 12.0f;
+
+    glm::vec3 pos(0.0f);
+    for (int attempt = 0; attempt < 12; ++attempt)
+    {
+        int side = static_cast<int>(randFloat() * 4.0f) % 4;
+
+        switch (side)
+        {
+        case 0: // left
+            pos = glm::vec3(arenaMin + spawnOffset, 0.0f, arenaMin + randFloat() * (arenaMax - arenaMin));
+            break;
+        case 1: // right
+            pos = glm::vec3(arenaMax - spawnOffset, 0.0f, arenaMin + randFloat() * (arenaMax - arenaMin));
+            break;
+        case 2: // bottom
+            pos = glm::vec3(arenaMin + randFloat() * (arenaMax - arenaMin), 0.0f, arenaMin + spawnOffset);
+            break;
+        default: // top
+            pos = glm::vec3(arenaMin + randFloat() * (arenaMax - arenaMin), 0.0f, arenaMax - spawnOffset);
+            break;
+        }
+
+        if (glm::length((pos + glm::vec3(0.0f, 1.0f, 0.0f)) - playerPosition) >= minDistanceFromPlayer)
+            break;
+    }
+
+    enemy.position = pos;
+    enemy.health = 3.0f;
+    enemy.active = true;
+    enemy.proximityTime = 0.0f;
+    enemy.lastDamageTime = -1.0f;
+}
+
 void updateEnemy()
 {
     for (auto& enemy : enemies)
@@ -308,37 +453,61 @@ void updateEnemy()
         }
 
         enemy.position.y = 0.0f;
+
+        // Check if enemy is in damage range of player
+        float damageRange = 2.0f;  // Maximum range for damage
+        if (distance < damageRange)
+        {
+            // Enemy is in range, accumulate proximity time
+            enemy.proximityTime += deltaTime;
+
+            // Deal damage if proximity time exceeds delay and enough time has passed since last damage
+            if (enemy.proximityTime >= enemyDamageDelay)
+            {
+                if (enemy.lastDamageTime < 0.0f || (gameTime - enemy.lastDamageTime) >= enemyDamageInterval)
+                {
+                    playerHealth = std::max(0.0f, playerHealth - enemyDamageAmount);
+                    enemy.lastDamageTime = gameTime;
+                    std::cout << "Player hit! Health: " << playerHealth << std::endl;
+                }
+            }
+        }
+        else
+        {
+            // Enemy out of range, reset proximity time
+            enemy.proximityTime = 0.0f;
+        }
+
+        // Enemy-enemy collision detection
+        for (auto& otherEnemy : enemies)
+        {
+            if (!otherEnemy.active || &enemy == &otherEnemy)
+                continue;
+
+            glm::vec3 toOther = otherEnemy.position - enemy.position;
+            float distance = glm::length(toOther);
+            float minDistance = enemy.radius + otherEnemy.radius;
+
+            if (distance < minDistance && distance > 0.001f)
+            {
+                // Push both enemies apart
+                glm::vec3 pushDirection = glm::normalize(toOther);
+                enemy.position -= pushDirection * (minDistance - distance) * 0.5f;
+                otherEnemy.position += pushDirection * (minDistance - distance) * 0.5f;
+            }
+        }
     }
-}
-
-void spawnRandomEnemy(Enemy& enemy)
-{
-    auto randomArenaValue = []() {
-        return (randFloat() - 0.5f) * 80.0f;
-    };
-
-    glm::vec3 spawnPos;
-    do
-    {
-        spawnPos = glm::vec3(randomArenaValue(), 0.0f, randomArenaValue());
-    } while (glm::length(glm::vec2(spawnPos.x - playerPosition.x, spawnPos.z - playerPosition.z)) < 12.0f);
-
-    enemy.active = true;
-    enemy.position = spawnPos;
-    enemy.health = 3.0f;
-}
-
-void spawnEnemies(int count)
-{
-    enemies.clear();
-    enemies.resize(count);
-    for (auto& enemy : enemies)
-        spawnRandomEnemy(enemy);
 }
 
 // -------- Mouse --------
 void mouse_callback(GLFWwindow* window, double xpos, double ypos)
 {
+    if (gamePaused)
+    {
+        firstMouse = true;
+        return;
+    }
+
     if (firstMouse)
     {
         lastX = xpos;
@@ -533,10 +702,10 @@ std::vector<float> createCube(float size)
 
         // right
          h, -h, -h,  1, 0, 0,
-         h,  h, -h,  1, 0, 0,
-         h,  h,  h,  1, 0, 0,
-         h,  h,  h,  1, 0, 0,
          h, -h,  h,  1, 0, 0,
+         h,  h,  h,  1, 0, 0,
+         h,  h,  h,  1, 0, 0,
+         h,  h, -h,  1, 0, 0,
          h, -h, -h,  1, 0, 0,
 
         // top
@@ -818,9 +987,9 @@ int main()
 {
     glfwInit();
 
-    const int windowWidth = 1920;
-    const int windowHeight = 1080;
+    std::srand(static_cast<unsigned int>(std::time(nullptr)));
 
+    // Set window hints for borderless fullscreen
     glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
@@ -832,7 +1001,11 @@ int main()
         return -1;
     }
 
-    glfwSetWindowPos(window, 0, 0);
+    {
+        std::stringstream title;
+        title << "Scene | Score: " << playerScore;
+        glfwSetWindowTitle(window, title.str().c_str());
+    }
 
     glfwMakeContextCurrent(window);
 
@@ -907,8 +1080,8 @@ int main()
         GL_TEXTURE_2D,
         0,
         GL_RGBA16F,
-        800,
-        600,
+        windowWidth,
+        windowHeight,
         0,
         GL_RGBA,
         GL_FLOAT,
@@ -946,8 +1119,8 @@ int main()
             GL_TEXTURE_2D,
             0,
             GL_RGBA16F,
-            800,
-            600,
+            windowWidth,
+            windowHeight,
             0,
             GL_RGBA,
             GL_FLOAT,
@@ -1041,7 +1214,13 @@ int main()
     glUniform1i(glGetUniformLocation(brightShader, "scene"), 0);
 
     initFireParticles();
-    spawnEnemies(5);
+
+    for (int i = 0; i < 3; ++i)
+    {
+        Enemy enemy;
+        spawnRandomEnemy(enemy);
+        enemies.push_back(enemy);
+    }
 
     // Cache uniform locations (performance improvement)
     int viewLoc = glGetUniformLocation(shader, "view");
@@ -1057,16 +1236,33 @@ int main()
         float currentFrame = glfwGetTime();
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
+        if (!gamePaused)
+        {
+            gameTime += deltaTime;
+            enemySpawnAccumulator += deltaTime;
+
+            float enemySpawnInterval = std::max(minEnemySpawnInterval, initialEnemySpawnInterval - (gameTime * enemySpawnRampRate));
+            if (enemySpawnAccumulator >= enemySpawnInterval)
+            {
+                enemySpawnAccumulator = 0.0f;
+                Enemy newEnemy;
+                spawnRandomEnemy(newEnemy);
+                enemies.push_back(newEnemy);
+                std::cout << "Enemy spawned. Total enemies: " << enemies.size() << std::endl;
+            }
+        }
 
         processInput(window);
-        updatePlayerController();
-        updateEnemy();
+        if (!gamePaused)
+        {
+            updatePlayerController();
+            updateEnemy();
 
-        // Update fire particles each frame so they spawn and animate naturally
-        updateFireParticles(deltaTime);
-        // Update thrown fireballs
-        for (size_t i = 0; i < fireballs.size(); ) {
-            Fireball& fireball = fireballs[i];
+            // Update fire particles each frame so they spawn and animate naturally
+            updateFireParticles(deltaTime);
+            // Update thrown fireballs
+            for (size_t i = 0; i < fireballs.size(); ) {
+                Fireball& fireball = fireballs[i];
 
             // small gravity
             fireball.velocity += glm::vec3(0.0f, -9.8f, 0.0f) * (0.25f * deltaTime);
@@ -1129,10 +1325,14 @@ int main()
                     std::cout << "Enemy hit! Health: " << enemy.health << std::endl;
                     if (enemy.health <= 0.0f)
                     {
-                        playerMana = std::min(playerMaxMana, playerMana + enemyKillManaGain);
-                        std::cout << "Mana restored: " << playerMana << std::endl;
+                        playerScore += 100;
+                        {
+                            std::stringstream title;
+                            title << "Scene | Score: " << playerScore;
+                            glfwSetWindowTitle(window, title.str().c_str());
+                        }
                         spawnRandomEnemy(enemy);
-                        std::cout << "Enemy defeated. Respawning." << std::endl;
+                        std::cout << "Enemy defeated. Score: " << playerScore << ". Respawning immediately." << std::endl;
                     }
 
                     fireballs.erase(fireballs.begin() + static_cast<std::vector<Fireball>::difference_type>(i));
@@ -1143,6 +1343,21 @@ int main()
             if (hitEnemy)
                 continue;
 
+            // Wall collision detection
+            const float arenaMin = -50.0f;
+            const float arenaMax = 50.0f;
+            const float wallCollisionBuffer = 0.5f;
+            
+            if (fireball.position.x < arenaMin + wallCollisionBuffer ||
+                fireball.position.x > arenaMax - wallCollisionBuffer ||
+                fireball.position.z < arenaMin + wallCollisionBuffer ||
+                fireball.position.z > arenaMax - wallCollisionBuffer)
+            {
+                spawnFireExplosion(fireball.position);
+                fireballs.erase(fireballs.begin() + static_cast<std::vector<Fireball>::difference_type>(i));
+                continue;
+            }
+
             // impact or timeout
             if (fireball.position.y <= 0.1f || fireball.life >= fireball.maxLife) {
                 spawnFireExplosion(fireball.position);
@@ -1152,7 +1367,8 @@ int main()
                 continue;
             }
 
-            ++i;
+                ++i;
+            }
         }
 
         glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
@@ -1162,7 +1378,7 @@ int main()
 
         // Matrices
         glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
-        glm::mat4 projection = glm::perspective(glm::radians(fov), static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.1f, 100.0f);
+        glm::mat4 projection = glm::perspective(glm::radians(fov), static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.1f, 500.0f);
         glm::mat4 model = glm::mat4(1.0f);
 
         glm::vec3 lightDir = glm::normalize(glm::vec3(-0.3f, -1.0f, -0.2f));
@@ -1313,6 +1529,12 @@ int main()
         glBindTexture(GL_TEXTURE_2D, pingpongColorbuffers[!horizontal]);
         glUniform1f(glGetUniformLocation(screenShader, "bloomStrength"), bloomEnabled ? bloomStrength : 0.0f);
         glUniform1i(glGetUniformLocation(screenShader, "vignetteEnabled"), vignetteEnabled ? 1 : 0);
+        glUniform1f(glGetUniformLocation(screenShader, "manaRatio"), playerMana / playerMaxMana);
+        glUniform1f(glGetUniformLocation(screenShader, "healthRatio"), playerHealth / playerMaxHealth);
+        glUniform1i(glGetUniformLocation(screenShader, "scoreValue"), playerScore);
+        glUniform1i(glGetUniformLocation(screenShader, "timeValue"), static_cast<int>(gameTime));
+        glUniform1i(glGetUniformLocation(screenShader, "paused"), gamePaused ? 1 : 0);
+        glUniform2f(glGetUniformLocation(screenShader, "mousePos"), mousePosition.x, mousePosition.y);
 
         // Render fullscreen quad with HDR scene + blurred texture
         renderQuad();
