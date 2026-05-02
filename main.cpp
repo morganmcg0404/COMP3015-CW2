@@ -70,11 +70,6 @@ bool vignetteEnabled = true;
 bool vignetteKeyPressed = false;
 bool toonShadingEnabled = false;
 bool toonKeyPressed = false;
-bool fogEnabled = true;
-bool fogKeyPressed = false;
-float fogDensity = 0.01f;
-bool fogDensityUpPressed = false;
-bool fogDensityDownPressed = false;
 float bloomStrength = 0.35f;
 float brightThreshold = 0.7f;
 bool bloomStrengthUpPressed = false;
@@ -250,34 +245,6 @@ void processInput(GLFWwindow *window)
     }
     if (glfwGetKey(window, GLFW_KEY_T) == GLFW_RELEASE)
         toonKeyPressed = false;
-
-    if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS && !fogKeyPressed)
-    {
-        fogEnabled = !fogEnabled;
-        fogKeyPressed = true;
-        std::cout << "Fog " << (fogEnabled ? "ON" : "OFF") << std::endl;
-    }
-    if (glfwGetKey(window, GLFW_KEY_X) == GLFW_RELEASE)
-        fogKeyPressed = false;
-
-    if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS && !fogDensityUpPressed)
-    {
-        fogDensity += 0.01f;
-        fogDensityUpPressed = true;
-        std::cout << "Fog Density: " << fogDensity << std::endl;
-    }
-    if (glfwGetKey(window, GLFW_KEY_O) == GLFW_RELEASE)
-        fogDensityUpPressed = false;
-
-    if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS && !fogDensityDownPressed)
-    {
-        fogDensity -= 0.01f;
-        if (fogDensity < 0.0f) fogDensity = 0.0f;
-        fogDensityDownPressed = true;
-        std::cout << "Fog Density: " << fogDensity << std::endl;
-    }
-    if (glfwGetKey(window, GLFW_KEY_I) == GLFW_RELEASE)
-        fogDensityDownPressed = false;
 
     if (glfwGetKey(window, GLFW_KEY_PAGE_UP) == GLFW_PRESS && !bloomStrengthUpPressed)
     {
@@ -1395,11 +1362,6 @@ int main()
 
         glUniform3fv(lightLoc, 1, glm::value_ptr(lightDir));
         glUniform3fv(viewPosLoc, 1, glm::value_ptr(cameraPos));
-
-        // Fog uniforms
-        glUniform1i(glGetUniformLocation(activeShader, "fogEnabled"), fogEnabled ? 1 : 0);
-        glUniform1f(glGetUniformLocation(activeShader, "fogDensity"), fogDensity);
-        glUniform3f(glGetUniformLocation(activeShader, "fogColor"), 0.5f, 0.7f, 1.0f);  // Sky blue
 
         // Arena floor
         glUniform3f(objectColorLoc, 0.28f, 0.28f, 0.30f);

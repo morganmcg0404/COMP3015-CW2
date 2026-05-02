@@ -7,9 +7,6 @@ out vec4 FragColor;
 uniform vec3 objectColor;
 uniform vec3 lightDir;
 uniform vec3 viewPos;
-uniform bool fogEnabled;
-uniform float fogDensity;
-uniform vec3 fogColor;
 
 void main()
 {
@@ -43,15 +40,6 @@ void main()
     {
         // Darken near edges for outline effect
         result *= 0.6;
-    }
-
-    // Apply fog
-    if (fogEnabled)
-    {
-        float distance = length(FragPos - viewPos);
-        float fogFactor = exp(-fogDensity * fogDensity * distance * distance);
-        fogFactor = clamp(fogFactor, 0.0, 1.0);
-        result = mix(fogColor, result, fogFactor);
     }
     
     FragColor = vec4(result, 1.0);
