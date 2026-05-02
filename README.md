@@ -89,3 +89,8 @@ Open the solution in Visual Studio and build the project in Debug|x64.
 
 - The project uses a borderless 1920x1080 windowed-fullscreen setup.
 - Fireballs cost mana, and mana regenerates over time.
+
+## AI assistance note
+
+AI assistance was used throughout development to support planning, debugging, report drafting, shader changes, gameplay iteration, and other code edits.
+The full prompt transcript for AI-assisted development is recorded in [ai-transcript.md](ai-transcript.md).
