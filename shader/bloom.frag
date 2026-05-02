@@ -51,73 +51,12 @@ vec2 narrowDigitUV(vec2 uv)
 
 float letterMask(int letter, vec2 uv)
 {
-    float v = 0.0;
-
-    if (letter == 0) // R
-    {
-        v = max(v, rectMask(uv, vec2(0.12, 0.10), vec2(0.24, 0.90)));
-        v = max(v, rectMask(uv, vec2(0.24, 0.78), vec2(0.72, 0.90)));
-        v = max(v, rectMask(uv, vec2(0.24, 0.46), vec2(0.68, 0.58)));
-        v = max(v, rectMask(uv, vec2(0.62, 0.46), vec2(0.74, 0.78)));
-        v = max(v, rectMask(uv, vec2(0.38, 0.10), vec2(0.74, 0.52)));
-    }
-    else if (letter == 1) // E
-    {
-        v = max(v, rectMask(uv, vec2(0.12, 0.10), vec2(0.24, 0.90)));
-        v = max(v, rectMask(uv, vec2(0.24, 0.78), vec2(0.78, 0.90)));
-        v = max(v, rectMask(uv, vec2(0.24, 0.46), vec2(0.66, 0.58)));
-        v = max(v, rectMask(uv, vec2(0.24, 0.10), vec2(0.78, 0.22)));
-    }
-    else if (letter == 2) // S
-    {
-        v = max(v, rectMask(uv, vec2(0.18, 0.78), vec2(0.82, 0.90)));
-        v = max(v, rectMask(uv, vec2(0.12, 0.46), vec2(0.74, 0.58)));
-        v = max(v, rectMask(uv, vec2(0.18, 0.10), vec2(0.82, 0.22)));
-        v = max(v, rectMask(uv, vec2(0.12, 0.46), vec2(0.24, 0.90)));
-        v = max(v, rectMask(uv, vec2(0.76, 0.10), vec2(0.88, 0.54)));
-    }
-    else if (letter == 3) // U
-    {
-        v = max(v, rectMask(uv, vec2(0.12, 0.22), vec2(0.24, 0.90)));
-        v = max(v, rectMask(uv, vec2(0.76, 0.22), vec2(0.88, 0.90)));
-        v = max(v, rectMask(uv, vec2(0.24, 0.10), vec2(0.76, 0.22)));
-    }
-    else if (letter == 4) // M
-    {
-        v = max(v, rectMask(uv, vec2(0.12, 0.10), vec2(0.24, 0.90)));
-        v = max(v, rectMask(uv, vec2(0.76, 0.10), vec2(0.88, 0.90)));
-        v = max(v, rectMask(uv, vec2(0.24, 0.62), vec2(0.36, 0.90)));
-        v = max(v, rectMask(uv, vec2(0.64, 0.62), vec2(0.76, 0.90)));
-    }
-    else if (letter == 5) // Q
-    {
-        v = max(v, rectMask(uv, vec2(0.18, 0.82), vec2(0.82, 0.90)));
-        v = max(v, rectMask(uv, vec2(0.12, 0.22), vec2(0.24, 0.82)));
-        v = max(v, rectMask(uv, vec2(0.76, 0.22), vec2(0.88, 0.82)));
-        v = max(v, rectMask(uv, vec2(0.18, 0.10), vec2(0.82, 0.18)));
-        v = max(v, rectMask(uv, vec2(0.60, 0.10), vec2(0.82, 0.32)));
-    }
-    else if (letter == 6) // I
-    {
-        v = max(v, rectMask(uv, vec2(0.18, 0.82), vec2(0.82, 0.90)));
-        v = max(v, rectMask(uv, vec2(0.42, 0.10), vec2(0.58, 0.90)));
-        v = max(v, rectMask(uv, vec2(0.18, 0.10), vec2(0.82, 0.18)));
-    }
-    else if (letter == 7) // T
-    {
-        v = max(v, rectMask(uv, vec2(0.18, 0.82), vec2(0.82, 0.90)));
-        v = max(v, rectMask(uv, vec2(0.42, 0.10), vec2(0.58, 0.90)));
-    }
-
-    return clamp(v, 0.0, 1.0);
+    return 0.0;  // Unused - removed pause menu
 }
 
 float drawLetter(int letter, vec2 uv, vec2 minP, vec2 maxP)
 {
-    vec2 p = (uv - minP) / (maxP - minP);
-    if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0)
-        return 0.0;
-    return letterMask(letter, p);
+    return 0.0;  // Unused - removed pause menu
 }
 
 void main()
@@ -301,57 +240,6 @@ void main()
     if (paused)
     {
         finalColor = mix(finalColor, vec3(0.0), 0.60);
-
-        vec2 pausePanelMin = vec2(0.34, 0.28);
-        vec2 pausePanelMax = vec2(0.66, 0.72);
-        bool inPausePanel = TexCoords.x >= pausePanelMin.x && TexCoords.x <= pausePanelMax.x && TexCoords.y >= pausePanelMin.y && TexCoords.y <= pausePanelMax.y;
-        if (inPausePanel)
-            finalColor = mix(finalColor, vec3(0.05, 0.05, 0.05), 0.85);
-
-        vec2 resumeMin = vec2(0.41, 0.52);
-        vec2 resumeMax = vec2(0.59, 0.60);
-        vec2 quitMin = vec2(0.41, 0.40);
-        vec2 quitMax = vec2(0.59, 0.48);
-
-        bool overResume = mousePos.x >= resumeMin.x && mousePos.x <= resumeMax.x && mousePos.y >= resumeMin.y && mousePos.y <= resumeMax.y;
-        bool overQuit = mousePos.x >= quitMin.x && mousePos.x <= quitMax.x && mousePos.y >= quitMin.y && mousePos.y <= quitMax.y;
-
-        vec3 resumeColor = overResume ? vec3(0.35, 0.80, 0.35) : vec3(0.22, 0.60, 0.22);
-        vec3 quitColor = overQuit ? vec3(0.90, 0.30, 0.30) : vec3(0.70, 0.18, 0.18);
-
-        if (TexCoords.x >= resumeMin.x && TexCoords.x <= resumeMax.x && TexCoords.y >= resumeMin.y && TexCoords.y <= resumeMax.y)
-        {
-            finalColor = resumeColor;
-            float textMask = 0.0;
-            vec2 base = vec2(0.418, 0.536);
-            float letterW = 0.020;
-            float letterH = 0.048;
-            float gap = 0.0035;
-            textMask = max(textMask, drawLetter(0, TexCoords, base + vec2(0.000, 0.0), base + vec2(letterW, letterH)));
-            textMask = max(textMask, drawLetter(1, TexCoords, base + vec2((letterW + gap) * 1.0, 0.0), base + vec2((letterW + gap) * 1.0 + letterW, letterH)));
-            textMask = max(textMask, drawLetter(2, TexCoords, base + vec2((letterW + gap) * 2.0, 0.0), base + vec2((letterW + gap) * 2.0 + letterW, letterH)));
-            textMask = max(textMask, drawLetter(3, TexCoords, base + vec2((letterW + gap) * 3.0, 0.0), base + vec2((letterW + gap) * 3.0 + letterW, letterH)));
-            textMask = max(textMask, drawLetter(4, TexCoords, base + vec2((letterW + gap) * 4.0, 0.0), base + vec2((letterW + gap) * 4.0 + letterW, letterH)));
-            textMask = max(textMask, drawLetter(1, TexCoords, base + vec2((letterW + gap) * 5.0, 0.0), base + vec2((letterW + gap) * 5.0 + letterW, letterH)));
-            if (textMask > 0.0)
-                finalColor = vec3(0.95, 0.95, 0.95);
-        }
-
-        if (TexCoords.x >= quitMin.x && TexCoords.x <= quitMax.x && TexCoords.y >= quitMin.y && TexCoords.y <= quitMax.y)
-        {
-            finalColor = quitColor;
-            float textMask = 0.0;
-            vec2 base = vec2(0.439, 0.416);
-            float letterW = 0.020;
-            float letterH = 0.048;
-            float gap = 0.0035;
-            textMask = max(textMask, drawLetter(5, TexCoords, base + vec2(0.000, 0.0), base + vec2(letterW, letterH)));
-            textMask = max(textMask, drawLetter(6, TexCoords, base + vec2((letterW + gap) * 1.0, 0.0), base + vec2((letterW + gap) * 1.0 + letterW, letterH)));
-            textMask = max(textMask, drawLetter(7, TexCoords, base + vec2((letterW + gap) * 2.0, 0.0), base + vec2((letterW + gap) * 2.0 + letterW, letterH)));
-            textMask = max(textMask, drawLetter(7, TexCoords, base + vec2((letterW + gap) * 3.0, 0.0), base + vec2((letterW + gap) * 3.0 + letterW, letterH)));
-            if (textMask > 0.0)
-                finalColor = vec3(0.95, 0.95, 0.95);
-        }
     }
 
     // Keep bloom subtle so the scene does not wash out

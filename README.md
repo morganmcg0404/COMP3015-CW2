@@ -1,6 +1,6 @@
 # COMP3015-CW2
 
-A small OpenGL game scene built in C++ with GLFW, GLAD, GLM, and FreeType.
+A small OpenGL game scene built in C++ with GLFW, GLAD, and GLM.
 
 ## Features
 - First-person player movement

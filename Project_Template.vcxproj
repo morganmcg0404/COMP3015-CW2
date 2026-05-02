@@ -72,19 +72,23 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
+    <IncludePath>$(ProjectDir)dependencies\GLAD\include;$(ProjectDir)dependencies\GLFW\include;$(ProjectDir)dependencies\GLM;C:\Users\Public\OpenGL\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)dependencies\GLFW\lib-vc2022;C:\Users\Public\OpenGL\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
+    <IncludePath>$(ProjectDir)dependencies\GLAD\include;$(ProjectDir)dependencies\GLFW\include;$(ProjectDir)dependencies\GLM;C:\Dependencies\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)dependencies\GLFW\lib-vc2022;C:\Dependencies\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>$(ProjectDir)dependencies\freetype\include;$(ProjectDir)dependencies\GLAD\include;$(ProjectDir)dependencies\GLFW\include;$(ProjectDir)dependencies\GLM;C:\Users\Public\OpenGL\include;$(IncludePath)</IncludePath>
-    <LibraryPath>$(ProjectDir)dependencies\freetype\release static\vs2017-2026\x64;$(ProjectDir)dependencies\GLFW\lib-vc2022;C:\Users\Public\OpenGL\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(ProjectDir)dependencies\GLAD\include;$(ProjectDir)dependencies\GLFW\include;$(ProjectDir)dependencies\GLM;C:\Users\Public\OpenGL\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)dependencies\GLFW\lib-vc2022;C:\Users\Public\OpenGL\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>$(ProjectDir)dependencies\freetype\include;$(ProjectDir)dependencies\GLAD\include;$(ProjectDir)dependencies\GLFW\include;$(ProjectDir)dependencies\GLM;C:\Dependencies\include;$(IncludePath)</IncludePath>
-    <LibraryPath>$(ProjectDir)dependencies\freetype\release static\vs2017-2026\x64;$(ProjectDir)dependencies\GLFW\lib-vc2022;C:\Dependencies\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(ProjectDir)dependencies\GLAD\include;$(ProjectDir)dependencies\GLFW\include;$(ProjectDir)dependencies\GLM;C:\Dependencies\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)dependencies\GLFW\lib-vc2022;C:\Dependencies\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -96,6 +100,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>glfw3.lib;glfw3_mt.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -112,6 +117,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>glfw3.lib;glfw3_mt.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -124,7 +130,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>glfw3.lib;glfw3_mt.lib;freetype.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>glfw3.lib;glfw3_mt.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -164,6 +170,8 @@
     <none Include="shader\brightpass.frag" />
     <none Include="shader\fire.frag" />
     <none Include="shader\fire.vert" />
+    <none Include="shader\toon.frag" />
+    <none Include="shader\toon.vert" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="helper\glslprogram.h" />

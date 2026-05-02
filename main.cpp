@@ -20,7 +20,6 @@ void updatePlayerController();
 void spawnFireExplosion(const glm::vec3& position);
 void spawnRandomEnemy();
 float randFloat();
-void setPaused(GLFWwindow* window, bool paused);
 
 // Resolution constants
 const int windowWidth = 1920;
@@ -69,6 +68,13 @@ bool bloomEnabled = true;
 bool bloomKeyPressed = false;
 bool vignetteEnabled = true;
 bool vignetteKeyPressed = false;
+bool toonShadingEnabled = false;
+bool toonKeyPressed = false;
+bool fogEnabled = true;
+bool fogKeyPressed = false;
+float fogDensity = 0.01f;
+bool fogDensityUpPressed = false;
+bool fogDensityDownPressed = false;
 float bloomStrength = 0.35f;
 float brightThreshold = 0.7f;
 bool bloomStrengthUpPressed = false;
@@ -146,7 +152,7 @@ void processInput(GLFWwindow *window)
 {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !pauseKeyPressed)
     {
-        setPaused(window, !gamePaused);
+        glfwSetWindowShouldClose(window, true);
         pauseKeyPressed = true;
     }
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_RELEASE)
@@ -157,32 +163,6 @@ void processInput(GLFWwindow *window)
     glfwGetCursorPos(window, &cursorX, &cursorY);
     mousePosition = glm::vec2(static_cast<float>(cursorX) / static_cast<float>(windowWidth),
                               1.0f - static_cast<float>(cursorY) / static_cast<float>(windowHeight));
-
-    if (gamePaused)
-    {
-        bool leftClick = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
-        if (leftClick && !pauseClickPressed)
-        {
-            pauseClickPressed = true;
-
-            const glm::vec2 resumeMin(0.42f, 0.53f);
-            const glm::vec2 resumeMax(0.58f, 0.61f);
-            const glm::vec2 quitMin(0.42f, 0.41f);
-            const glm::vec2 quitMax(0.58f, 0.49f);
-
-            if (mousePosition.x >= resumeMin.x && mousePosition.x <= resumeMax.x && mousePosition.y >= resumeMin.y && mousePosition.y <= resumeMax.y)
-            {
-                setPaused(window, false);
-            }
-            else if (mousePosition.x >= quitMin.x && mousePosition.x <= quitMax.x && mousePosition.y >= quitMin.y && mousePosition.y <= quitMax.y)
-            {
-                glfwSetWindowShouldClose(window, true);
-            }
-        }
-        if (!leftClick)
-            pauseClickPressed = false;
-        return;
-    }
 
     float moveSpeed = playerMoveSpeed;
     if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS)
@@ -262,6 +242,43 @@ void processInput(GLFWwindow *window)
     if (glfwGetKey(window, GLFW_KEY_V) == GLFW_RELEASE)
         vignetteKeyPressed = false;
 
+    if (glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS && !toonKeyPressed)
+    {
+        toonShadingEnabled = !toonShadingEnabled;
+        toonKeyPressed = true;
+        std::cout << "Toon Shading " << (toonShadingEnabled ? "ON" : "OFF") << std::endl;
+    }
+    if (glfwGetKey(window, GLFW_KEY_T) == GLFW_RELEASE)
+        toonKeyPressed = false;
+
+    if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS && !fogKeyPressed)
+    {
+        fogEnabled = !fogEnabled;
+        fogKeyPressed = true;
+        std::cout << "Fog " << (fogEnabled ? "ON" : "OFF") << std::endl;
+    }
+    if (glfwGetKey(window, GLFW_KEY_X) == GLFW_RELEASE)
+        fogKeyPressed = false;
+
+    if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS && !fogDensityUpPressed)
+    {
+        fogDensity += 0.01f;
+        fogDensityUpPressed = true;
+        std::cout << "Fog Density: " << fogDensity << std::endl;
+    }
+    if (glfwGetKey(window, GLFW_KEY_O) == GLFW_RELEASE)
+        fogDensityUpPressed = false;
+
+    if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS && !fogDensityDownPressed)
+    {
+        fogDensity -= 0.01f;
+        if (fogDensity < 0.0f) fogDensity = 0.0f;
+        fogDensityDownPressed = true;
+        std::cout << "Fog Density: " << fogDensity << std::endl;
+    }
+    if (glfwGetKey(window, GLFW_KEY_I) == GLFW_RELEASE)
+        fogDensityDownPressed = false;
+
     if (glfwGetKey(window, GLFW_KEY_PAGE_UP) == GLFW_PRESS && !bloomStrengthUpPressed)
     {
         bloomStrength += 0.05f;
@@ -337,22 +354,6 @@ void processInput(GLFWwindow *window)
     }
     if (glfwGetKey(window, GLFW_KEY_F) == GLFW_RELEASE)
         fireballKeyPressed = false;
-}
-
-void setPaused(GLFWwindow* window, bool paused)
-{
-    gamePaused = paused;
-    firstMouse = true;
-    pauseClickPressed = false;
-    fireballKeyPressed = false;
-    jumpKeyPressed = false;
-    bloomKeyPressed = false;
-    vignetteKeyPressed = false;
-    bloomStrengthUpPressed = false;
-    bloomStrengthDownPressed = false;
-    brightThresholdUpPressed = false;
-    brightThresholdDownPressed = false;
-    glfwSetInputMode(window, GLFW_CURSOR, paused ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
 }
 
 void updatePlayerController()
@@ -1203,6 +1204,11 @@ int main()
         "shader/fire.frag"
     );
 
+    unsigned int toonShader = createShader(
+        "shader/toon.vert",
+        "shader/toon.frag"
+    );
+
     glUseProgram(screenShader);
     glUniform1i(glGetUniformLocation(screenShader, "scene"), 0);
     glUniform1i(glGetUniformLocation(screenShader, "bloomBlur"), 1);
@@ -1236,27 +1242,24 @@ int main()
         float currentFrame = glfwGetTime();
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
-        if (!gamePaused)
-        {
-            gameTime += deltaTime;
-            enemySpawnAccumulator += deltaTime;
+        
+        gameTime += deltaTime;
+        enemySpawnAccumulator += deltaTime;
 
-            float enemySpawnInterval = std::max(minEnemySpawnInterval, initialEnemySpawnInterval - (gameTime * enemySpawnRampRate));
-            if (enemySpawnAccumulator >= enemySpawnInterval)
-            {
-                enemySpawnAccumulator = 0.0f;
-                Enemy newEnemy;
-                spawnRandomEnemy(newEnemy);
-                enemies.push_back(newEnemy);
-                std::cout << "Enemy spawned. Total enemies: " << enemies.size() << std::endl;
-            }
+        float enemySpawnInterval = std::max(minEnemySpawnInterval, initialEnemySpawnInterval - (gameTime * enemySpawnRampRate));
+        if (enemySpawnAccumulator >= enemySpawnInterval)
+        {
+            enemySpawnAccumulator = 0.0f;
+            Enemy newEnemy;
+            spawnRandomEnemy(newEnemy);
+            enemies.push_back(newEnemy);
+            std::cout << "Enemy spawned. Total enemies: " << enemies.size() << std::endl;
         }
 
         processInput(window);
-        if (!gamePaused)
-        {
-            updatePlayerController();
-            updateEnemy();
+        
+        updatePlayerController();
+        updateEnemy();
 
             // Update fire particles each frame so they spawn and animate naturally
             updateFireParticles(deltaTime);
@@ -1369,12 +1372,13 @@ int main()
 
                 ++i;
             }
-        }
 
         glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        glUseProgram(shader);
+        // Choose which shader to use based on toon shading toggle
+        unsigned int activeShader = toonShadingEnabled ? toonShader : shader;
+        glUseProgram(activeShader);
 
         // Matrices
         glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
@@ -1391,6 +1395,11 @@ int main()
 
         glUniform3fv(lightLoc, 1, glm::value_ptr(lightDir));
         glUniform3fv(viewPosLoc, 1, glm::value_ptr(cameraPos));
+
+        // Fog uniforms
+        glUniform1i(glGetUniformLocation(activeShader, "fogEnabled"), fogEnabled ? 1 : 0);
+        glUniform1f(glGetUniformLocation(activeShader, "fogDensity"), fogDensity);
+        glUniform3f(glGetUniformLocation(activeShader, "fogColor"), 0.5f, 0.7f, 1.0f);  // Sky blue
 
         // Arena floor
         glUniform3f(objectColorLoc, 0.28f, 0.28f, 0.30f);
