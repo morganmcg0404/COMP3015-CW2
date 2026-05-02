@@ -68,8 +68,10 @@ bool bloomEnabled = true;
 bool bloomKeyPressed = false;
 bool vignetteEnabled = true;
 bool vignetteKeyPressed = false;
-bool toonShadingEnabled = false;
+bool toonShadingEnabled = true;
 bool toonKeyPressed = false;
+bool edgeEnabled = true;
+bool edgeKeyPressed = false;
 float bloomStrength = 0.35f;
 float brightThreshold = 0.7f;
 bool bloomStrengthUpPressed = false;
@@ -137,6 +139,8 @@ const float enemySpawnRampRate = 0.025f;
 unsigned int hdrFBO;
 unsigned int colorBuffer;
 unsigned int rboDepth;
+unsigned int normalBuffer;
+unsigned int sceneDepth;
 unsigned int brightFBO;
 unsigned int brightBuffer;
 unsigned int pingpongFBO[2];
@@ -237,14 +241,23 @@ void processInput(GLFWwindow *window)
     if (glfwGetKey(window, GLFW_KEY_V) == GLFW_RELEASE)
         vignetteKeyPressed = false;
 
-    if (glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS && !toonKeyPressed)
+    if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS && !toonKeyPressed)
     {
         toonShadingEnabled = !toonShadingEnabled;
         toonKeyPressed = true;
         std::cout << "Toon Shading " << (toonShadingEnabled ? "ON" : "OFF") << std::endl;
     }
-    if (glfwGetKey(window, GLFW_KEY_T) == GLFW_RELEASE)
+    if (glfwGetKey(window, GLFW_KEY_C) == GLFW_RELEASE)
         toonKeyPressed = false;
+
+    if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS && !edgeKeyPressed)
+    {
+        edgeEnabled = !edgeEnabled;
+        edgeKeyPressed = true;
+        std::cout << "Edge Detection " << (edgeEnabled ? "ON" : "OFF") << std::endl;
+    }
+    if (glfwGetKey(window, GLFW_KEY_X) == GLFW_RELEASE)
+        edgeKeyPressed = false;
 
     if (glfwGetKey(window, GLFW_KEY_PAGE_UP) == GLFW_PRESS && !bloomStrengthUpPressed)
     {
@@ -405,6 +418,9 @@ void spawnRandomEnemy(Enemy& enemy)
 
 void updateEnemy()
 {
+    const float damageRange = 2.0f;  // Maximum range for damage
+    const float playerRadius = 0.5f;
+
     for (auto& enemy : enemies)
     {
         if (!enemy.active)
@@ -414,17 +430,23 @@ void updateEnemy()
         toPlayer.y = 0.0f;
 
         float distance = glm::length(toPlayer);
-        if (distance > 0.001f)
+        float minSeparation = playerRadius + enemy.radius + 0.15f;
+        float stopDistance = std::max(damageRange * 0.9f, minSeparation);
+
+        // Move toward player, but stop at attack standoff distance so enemies don't push player.
+        if (distance > stopDistance && distance > 0.001f)
         {
             glm::vec3 direction = toPlayer / distance;
-            enemy.position += direction * enemy.moveSpeed * deltaTime;
+            float maxStep = enemy.moveSpeed * deltaTime;
+            float step = std::min(maxStep, distance - stopDistance);
+            enemy.position += direction * step;
         }
 
         enemy.position.y = 0.0f;
 
         // Check if enemy is in damage range of player
-        float damageRange = 2.0f;  // Maximum range for damage
-        if (distance < damageRange)
+        float attackDistance = glm::length(glm::vec3(playerPosition.x - enemy.position.x, 0.0f, playerPosition.z - enemy.position.z));
+        if (attackDistance < damageRange)
         {
             // Enemy is in range, accumulate proximity time
             enemy.proximityTime += deltaTime;
@@ -797,6 +819,12 @@ std::vector<float> createCapsule(float radius, float cylinderHeight, int sectorC
 unsigned int quadVAO = 0;
 unsigned int quadVBO;
 unsigned int blurShader;
+// Shadow mapping
+const unsigned int SHADOW_WIDTH = 4096;
+const unsigned int SHADOW_HEIGHT = 4096;
+unsigned int depthMapFBO = 0;
+unsigned int depthMap = 0;
+unsigned int depthShader = 0;
 
 float randFloat()
 {
@@ -1017,23 +1045,35 @@ int main()
         0
     );
 
-    // Depth buffer
-    glGenRenderbuffers(1, &rboDepth);
-    glBindRenderbuffer(GL_RENDERBUFFER, rboDepth);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, windowWidth, windowHeight);
+    // Create a normal buffer (second color attachment)
+    glGenTextures(1, &normalBuffer);
+    glBindTexture(GL_TEXTURE_2D, normalBuffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, windowWidth, windowHeight, 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, normalBuffer, 0);
 
-    glFramebufferRenderbuffer(
-        GL_FRAMEBUFFER,
-        GL_DEPTH_ATTACHMENT,
-        GL_RENDERBUFFER,
-        rboDepth
-    );
+    // Depth texture so we can sample scene depth in post-processing
+    glGenTextures(1, &sceneDepth);
+    glBindTexture(GL_TEXTURE_2D, sceneDepth);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, windowWidth, windowHeight, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, sceneDepth, 0);
 
     // Check completeness
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
     {
         std::cout << "ERROR: HDR Framebuffer not complete!" << std::endl;
     }
+
+    // Tell OpenGL we will render to both color attachments 0 and 1
+    GLenum attachments[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+    glDrawBuffers(2, attachments);
 
     // Unbind framebuffer
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -1176,6 +1216,9 @@ int main()
         "shader/toon.frag"
     );
 
+    // Depth (shadow) shader
+    depthShader = createShader("shader/depth.vert", "shader/depth.frag");
+
     glUseProgram(screenShader);
     glUniform1i(glGetUniformLocation(screenShader, "scene"), 0);
     glUniform1i(glGetUniformLocation(screenShader, "bloomBlur"), 1);
@@ -1195,14 +1238,29 @@ int main()
         enemies.push_back(enemy);
     }
 
-    // Cache uniform locations (performance improvement)
-    int viewLoc = glGetUniformLocation(shader, "view");
-    int projLoc = glGetUniformLocation(shader, "projection");
-    int modelLoc = glGetUniformLocation(shader, "model");
-    int normalMatrixLoc = glGetUniformLocation(shader, "normalMatrix");
-    int lightLoc = glGetUniformLocation(shader, "lightDir");
-    int viewPosLoc = glGetUniformLocation(shader, "viewPos");
-    int objectColorLoc = glGetUniformLocation(shader, "objectColor");
+    // Create depth framebuffer for shadow mapping
+    glGenFramebuffers(1, &depthMapFBO);
+
+    glGenTextures(1, &depthMap);
+    glBindTexture(GL_TEXTURE_2D, depthMap);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT,
+                 SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cout << "ERROR: Shadow Framebuffer not complete!" << std::endl;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // Uniform locations are fetched from the active shader each frame so toon/basic stay in sync.
 
     while (!glfwWindowShouldClose(window))
     {
@@ -1340,6 +1398,89 @@ int main()
                 ++i;
             }
 
+        // -- 1) Render scene to depth map from light's POV (shadow map) --
+        // Position the sun past the northeast corner of the arena
+        // Arena walls are at approximately +/-50.5; place sun beyond the NE corner
+        float arenaCorner = 50.5f;
+        float sunOffset = 20.0f; // how far past the corner
+        glm::vec3 sunPos = glm::vec3(arenaCorner + sunOffset, 60.0f, arenaCorner + sunOffset);
+        // Use a stable target at arena center so distant objects don't fall out of shadow coverage
+        glm::vec3 lightTarget = glm::vec3(0.0f, 1.0f, 0.0f);
+        glm::vec3 lightDir = glm::normalize(lightTarget - sunPos);
+        glm::mat4 lightProjection, lightView, lightSpaceMatrix;
+        float near_plane = 1.0f;
+        float far_plane = 500.0f;
+        // Fixed arena-wide coverage (arena is roughly 100x100), plus margin for walls and enemies
+        float orthoSize = 110.0f;
+        lightProjection = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, near_plane, far_plane);
+        // Use the sun world position as the light position for the depth pass
+        glm::vec3 lightPos = sunPos;
+        // Keep light view stable over arena to avoid distance-based shadow popping
+        lightView = glm::lookAt(lightPos, lightTarget, glm::vec3(0.0f, 1.0f, 0.0f));
+        lightSpaceMatrix = lightProjection * lightView;
+
+        glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+        glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+        glClear(GL_DEPTH_BUFFER_BIT);
+
+        glUseProgram(depthShader);
+        glUniformMatrix4fv(glGetUniformLocation(depthShader, "lightSpaceMatrix"), 1, GL_FALSE, glm::value_ptr(lightSpaceMatrix));
+
+        // Render scene geometry to depth map
+        // floor
+        glm::mat4 modelDepth = glm::mat4(1.0f);
+        glUniformMatrix4fv(glGetUniformLocation(depthShader, "model"), 1, GL_FALSE, glm::value_ptr(modelDepth));
+        plane.draw();
+
+        // walls (same transforms as main pass)
+        glm::mat4 wallModelDepth = glm::mat4(1.0f);
+        wallModelDepth = glm::translate(wallModelDepth, glm::vec3(0.0f, 2.5f, -50.5f));
+        wallModelDepth = glm::scale(wallModelDepth, glm::vec3(100.0f, 5.0f, 1.0f));
+        glUniformMatrix4fv(glGetUniformLocation(depthShader, "model"), 1, GL_FALSE, glm::value_ptr(wallModelDepth));
+        arenaBlock.draw();
+
+        wallModelDepth = glm::mat4(1.0f);
+        wallModelDepth = glm::translate(wallModelDepth, glm::vec3(0.0f, 2.5f, 50.5f));
+        wallModelDepth = glm::scale(wallModelDepth, glm::vec3(100.0f, 5.0f, 1.0f));
+        glUniformMatrix4fv(glGetUniformLocation(depthShader, "model"), 1, GL_FALSE, glm::value_ptr(wallModelDepth));
+        arenaBlock.draw();
+
+        wallModelDepth = glm::mat4(1.0f);
+        wallModelDepth = glm::translate(wallModelDepth, glm::vec3(-50.5f, 2.5f, 0.0f));
+        wallModelDepth = glm::scale(wallModelDepth, glm::vec3(1.0f, 5.0f, 100.0f));
+        glUniformMatrix4fv(glGetUniformLocation(depthShader, "model"), 1, GL_FALSE, glm::value_ptr(wallModelDepth));
+        arenaBlock.draw();
+
+        wallModelDepth = glm::mat4(1.0f);
+        wallModelDepth = glm::translate(wallModelDepth, glm::vec3(50.5f, 2.5f, 0.0f));
+        wallModelDepth = glm::scale(wallModelDepth, glm::vec3(1.0f, 5.0f, 100.0f));
+        glUniformMatrix4fv(glGetUniformLocation(depthShader, "model"), 1, GL_FALSE, glm::value_ptr(wallModelDepth));
+        arenaBlock.draw();
+
+        // enemies
+        for (const auto& enemy : enemies)
+        {
+            if (!enemy.active) continue;
+            glm::mat4 enemyModelDepth = glm::translate(glm::mat4(1.0f), enemy.position + glm::vec3(0.0f, 1.0f, 0.0f));
+            enemyModelDepth = glm::scale(enemyModelDepth, glm::vec3(0.55f));
+            glUniformMatrix4fv(glGetUniformLocation(depthShader, "model"), 1, GL_FALSE, glm::value_ptr(enemyModelDepth));
+            enemyMesh.draw();
+        }
+
+        // fireballs
+        for (const auto& fireball : fireballs)
+        {
+            if (!fireball.active) continue;
+            glm::mat4 ballModelDepth = glm::translate(glm::mat4(1.0f), fireball.position);
+            ballModelDepth = glm::scale(ballModelDepth, glm::vec3(0.35f));
+            glUniformMatrix4fv(glGetUniformLocation(depthShader, "model"), 1, GL_FALSE, glm::value_ptr(ballModelDepth));
+            sun.draw();
+        }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glViewport(0, 0, windowWidth, windowHeight);
+
+        // -- 2) Render scene as usual to HDR framebuffer --
         glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -1347,12 +1488,18 @@ int main()
         unsigned int activeShader = toonShadingEnabled ? toonShader : shader;
         glUseProgram(activeShader);
 
+        int viewLoc = glGetUniformLocation(activeShader, "view");
+        int projLoc = glGetUniformLocation(activeShader, "projection");
+        int modelLoc = glGetUniformLocation(activeShader, "model");
+        int normalMatrixLoc = glGetUniformLocation(activeShader, "normalMatrix");
+        int lightLoc = glGetUniformLocation(activeShader, "lightDir");
+        int viewPosLoc = glGetUniformLocation(activeShader, "viewPos");
+        int objectColorLoc = glGetUniformLocation(activeShader, "objectColor");
+
         // Matrices
         glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
         glm::mat4 projection = glm::perspective(glm::radians(fov), static_cast<float>(windowWidth) / static_cast<float>(windowHeight), 0.1f, 500.0f);
         glm::mat4 model = glm::mat4(1.0f);
-
-        glm::vec3 lightDir = glm::normalize(glm::vec3(-0.3f, -1.0f, -0.2f));
 
         // Send uniforms
         glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
@@ -1362,6 +1509,12 @@ int main()
 
         glUniform3fv(lightLoc, 1, glm::value_ptr(lightDir));
         glUniform3fv(viewPosLoc, 1, glm::value_ptr(cameraPos));
+
+        // Bind shadow map to texture unit 2 for sampling in shader
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, depthMap);
+        glUniform1i(glGetUniformLocation(activeShader, "shadowMap"), 2);
+        glUniformMatrix4fv(glGetUniformLocation(activeShader, "lightSpaceMatrix"), 1, GL_FALSE, glm::value_ptr(lightSpaceMatrix));
 
         // Arena floor
         glUniform3f(objectColorLoc, 0.28f, 0.28f, 0.30f);
@@ -1398,8 +1551,8 @@ int main()
         glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(wallModel)))));
         arenaBlock.draw();
 
-		// Sun position (opposite direction of light)
-		glm::vec3 sunPos = -lightDir * 30.0f;
+        // Sun position: reuse `sunPos` computed earlier for the depth pass
+        // (keeps the emissive sun object and the light source in sync)
 
 		// Build sun model matrix
 		glm::mat4 sunModel = glm::translate(glm::mat4(1.0f), sunPos);
@@ -1506,6 +1659,19 @@ int main()
         glUniform1i(glGetUniformLocation(screenShader, "timeValue"), static_cast<int>(gameTime));
         glUniform1i(glGetUniformLocation(screenShader, "paused"), gamePaused ? 1 : 0);
         glUniform2f(glGetUniformLocation(screenShader, "mousePos"), mousePosition.x, mousePosition.y);
+
+        // Bind normal and scene depth for edge detection
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, normalBuffer);
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, sceneDepth);
+        glUniform1i(glGetUniformLocation(screenShader, "normalMap"), 2);
+        glUniform1i(glGetUniformLocation(screenShader, "depthMap"), 3);
+        // Edge detection settings
+        glUniform1i(glGetUniformLocation(screenShader, "edgeEnabled"), edgeEnabled ? 1 : 0);
+        glUniform1f(glGetUniformLocation(screenShader, "edgeDepthThreshold"), 0.006);
+        glUniform1f(glGetUniformLocation(screenShader, "edgeNormalThreshold"), 0.25);
+        glUniform1f(glGetUniformLocation(screenShader, "edgeStrength"), 1.0);
 
         // Render fullscreen quad with HDR scene + blurred texture
         renderQuad();

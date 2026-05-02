@@ -5,6 +5,12 @@ in vec2 TexCoords;
 
 uniform sampler2D scene;
 uniform sampler2D bloomBlur;
+uniform sampler2D normalMap;
+uniform sampler2D depthMap;
+uniform bool edgeEnabled;
+uniform float edgeDepthThreshold;
+uniform float edgeNormalThreshold;
+uniform float edgeStrength;
 uniform float bloomStrength;
 uniform bool vignetteEnabled;
 uniform float manaRatio;
@@ -73,6 +79,34 @@ void main()
     }
 
     vec3 finalColor = (hdrColor + bloom * bloomStrength) * vignette;
+
+    // Edge detection (depth + normal based)
+    if (edgeEnabled)
+    {
+        float edge = 0.0;
+        vec3 centerNormal = texture(normalMap, TexCoords).rgb * 2.0 - 1.0;
+        float centerDepth = texture(depthMap, TexCoords).r;
+        // sample 8 neighbors
+        vec2 texel = 1.0 / vec2(textureSize(depthMap, 0));
+        int count = 0;
+        for (int x = -1; x <= 1; ++x)
+        {
+            for (int y = -1; y <= 1; ++y)
+            {
+                if (x == 0 && y == 0) continue;
+                vec2 off = TexCoords + vec2(x, y) * texel;
+                float d = abs(centerDepth - texture(depthMap, off).r);
+                vec3 n = texture(normalMap, off).rgb * 2.0 - 1.0;
+                float nd = length(centerNormal - n);
+                if (d > edgeDepthThreshold || nd > edgeNormalThreshold) edge += 1.0;
+                count++;
+            }
+        }
+        edge = edge / float(count);
+        float edgeMask = pow(clamp(edge, 0.0, 1.0), 1.0) * edgeStrength;
+
+        finalColor = mix(finalColor, vec3(0.0), edgeMask);
+    }
 
     // Cross-shaped crosshair in the center of the screen, corrected for aspect ratio
     vec2 p = TexCoords - vec2(0.5);
