@@ -5,11 +5,13 @@ in vec4 FragPosLightSpace;
 
 layout (location = 0) out vec4 FragColor;
 layout (location = 1) out vec4 NormalOut;
+layout (location = 2) out vec4 ObjectIdOut;
 
 uniform vec3 objectColor;
 uniform vec3 lightDir;
 uniform vec3 viewPos;
 uniform sampler2D shadowMap;
+uniform float objectId;
 
 void main()
 {
@@ -74,4 +76,5 @@ void main()
 
     // Write normals out for edge detection (pack to 0..1)
     NormalOut = vec4(normalize(norm) * 0.5 + 0.5, 1.0);
+    ObjectIdOut = vec4(objectId, 0.0, 0.0, 1.0);
 }

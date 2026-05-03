@@ -7,9 +7,11 @@ uniform sampler2D scene;
 uniform sampler2D bloomBlur;
 uniform sampler2D normalMap;
 uniform sampler2D depthMap;
+uniform sampler2D objectIdMap;
 uniform bool edgeEnabled;
 uniform float edgeDepthThreshold;
 uniform float edgeNormalThreshold;
+uniform float edgeIdThreshold;
 uniform float edgeStrength;
 uniform float bloomStrength;
 uniform bool vignetteEnabled;
@@ -80,12 +82,14 @@ void main()
 
     vec3 finalColor = (hdrColor + bloom * bloomStrength) * vignette;
 
-    // Edge detection (depth + normal based)
+    // Edge detection (depth + normal + object ID based)
     if (edgeEnabled)
     {
         float edge = 0.0;
+        float idEdge = 0.0;
         vec3 centerNormal = texture(normalMap, TexCoords).rgb * 2.0 - 1.0;
         float centerDepth = texture(depthMap, TexCoords).r;
+        float centerId = texture(objectIdMap, TexCoords).r;
         // sample 8 neighbors
         vec2 texel = 1.0 / vec2(textureSize(depthMap, 0));
         int count = 0;
@@ -98,11 +102,14 @@ void main()
                 float d = abs(centerDepth - texture(depthMap, off).r);
                 vec3 n = texture(normalMap, off).rgb * 2.0 - 1.0;
                 float nd = length(centerNormal - n);
+                float idDiff = abs(centerId - texture(objectIdMap, off).r);
                 if (d > edgeDepthThreshold || nd > edgeNormalThreshold) edge += 1.0;
+                // Object-ID edges should be decisive so touching enemies split clearly.
+                if (centerId > 0.001 && idDiff > edgeIdThreshold) idEdge = 1.0;
                 count++;
             }
         }
-        edge = edge / float(count);
+        edge = max(edge / float(count), idEdge);
         float edgeMask = pow(clamp(edge, 0.0, 1.0), 1.0) * edgeStrength;
 
         finalColor = mix(finalColor, vec3(0.0), edgeMask);

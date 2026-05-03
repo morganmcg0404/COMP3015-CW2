@@ -1,6 +1,7 @@
 #version 330 core
 layout (location = 0) out vec4 FragColor;
 layout (location = 1) out vec4 NormalOut;
+layout (location = 2) out vec4 ObjectIdOut;
 
 in vec3 Normal;
 in vec3 FragPos;
@@ -10,6 +11,7 @@ uniform vec3 lightDir;
 uniform vec3 viewPos;
 uniform vec3 objectColor;
 uniform sampler2D shadowMap;
+uniform float objectId;
 
 void main()
 {
@@ -51,4 +53,5 @@ void main()
 
     // Pack normal (world-space) into 0..1 range for post-processing edge detection
     NormalOut = vec4(normalize(norm) * 0.5 + 0.5, 1.0);
+    ObjectIdOut = vec4(objectId, 0.0, 0.0, 1.0);
 }

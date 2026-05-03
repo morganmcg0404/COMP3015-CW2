@@ -15,11 +15,14 @@
 #include <sstream>
 
 // -------- Forward declarations --------
+struct Enemy;
+
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void updatePlayerController();
 void spawnFireExplosion(const glm::vec3& position);
-void spawnRandomEnemy();
+void spawnRandomEnemy(Enemy& enemy);
 float randFloat();
+void resetGameState(GLFWwindow* window);
 
 // Resolution constants
 const int windowWidth = 1920;
@@ -35,8 +38,9 @@ float fov = 45.0f;
 glm::vec3 cameraPos = glm::vec3(0.0f, 1.7f, 5.0f);
 glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
 glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
+const glm::vec3 playerStartPosition = glm::vec3(0.0f, 0.0f, 5.0f);
 
-glm::vec3 playerPosition = glm::vec3(0.0f, 0.0f, 5.0f);
+glm::vec3 playerPosition = playerStartPosition;
 glm::vec3 playerVelocity = glm::vec3(0.0f);
 const float playerEyeHeight = 1.7f;
 const float playerMoveSpeed = 6.0f;
@@ -59,6 +63,8 @@ const float enemyDamageInterval = 1.0f;  // How often damage is dealt if in rang
 int playerScore = 0;
 
 bool gamePaused = false;
+bool playerDead = false;
+bool restartRequested = false;
 bool pauseKeyPressed = false;
 bool pauseClickPressed = false;
 glm::vec2 mousePosition = glm::vec2(0.0f);
@@ -81,6 +87,7 @@ bool brightThresholdDownPressed = false;
 bool fireKeyPressed = false;
 bool fireballKeyPressed = false;
 bool jumpKeyPressed = false;
+bool restartKeyPressed = false;
 
 struct FireParticle
 {
@@ -140,6 +147,7 @@ unsigned int hdrFBO;
 unsigned int colorBuffer;
 unsigned int rboDepth;
 unsigned int normalBuffer;
+unsigned int objectIdBuffer;
 unsigned int sceneDepth;
 unsigned int brightFBO;
 unsigned int brightBuffer;
@@ -162,6 +170,18 @@ void processInput(GLFWwindow *window)
     glfwGetCursorPos(window, &cursorX, &cursorY);
     mousePosition = glm::vec2(static_cast<float>(cursorX) / static_cast<float>(windowWidth),
                               1.0f - static_cast<float>(cursorY) / static_cast<float>(windowHeight));
+
+    if (playerDead)
+    {
+        if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS && !restartKeyPressed)
+        {
+            restartRequested = true;
+            restartKeyPressed = true;
+        }
+        if (glfwGetKey(window, GLFW_KEY_R) == GLFW_RELEASE)
+            restartKeyPressed = false;
+        return;
+    }
 
     float moveSpeed = playerMoveSpeed;
     if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS)
@@ -351,6 +371,36 @@ void updatePlayerController()
     }
 
     cameraPos = playerPosition + glm::vec3(0.0f, playerEyeHeight, 0.0f);
+}
+
+void resetGameState(GLFWwindow* window)
+{
+    playerDead = false;
+    restartRequested = false;
+    gamePaused = false;
+
+    playerHealth = playerMaxHealth;
+    playerMana = playerMaxMana;
+    playerScore = 0;
+    gameTime = 0.0f;
+    enemySpawnAccumulator = 0.0f;
+
+    playerPosition = playerStartPosition;
+    playerVelocity = glm::vec3(0.0f);
+    playerGrounded = true;
+    cameraPos = playerPosition + glm::vec3(0.0f, playerEyeHeight, 0.0f);
+
+    fireballs.clear();
+    enemies.clear();
+    for (int i = 0; i < 3; ++i)
+    {
+        Enemy enemy;
+        spawnRandomEnemy(enemy);
+        enemies.push_back(enemy);
+    }
+
+    glfwSetWindowTitle(window, "Scene");
+    std::cout << "Restarted run." << std::endl;
 }
 
 void spawnFireExplosion(const glm::vec3& position)
@@ -1055,6 +1105,16 @@ int main()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, normalBuffer, 0);
 
+    // Create object ID buffer (third color attachment) for robust object separation edges.
+    glGenTextures(1, &objectIdBuffer);
+    glBindTexture(GL_TEXTURE_2D, objectIdBuffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, windowWidth, windowHeight, 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, objectIdBuffer, 0);
+
     // Depth texture so we can sample scene depth in post-processing
     glGenTextures(1, &sceneDepth);
     glBindTexture(GL_TEXTURE_2D, sceneDepth);
@@ -1071,9 +1131,9 @@ int main()
         std::cout << "ERROR: HDR Framebuffer not complete!" << std::endl;
     }
 
-    // Tell OpenGL we will render to both color attachments 0 and 1
-    GLenum attachments[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
-    glDrawBuffers(2, attachments);
+    // Tell OpenGL we will render to all G-buffer-like color attachments.
+    GLenum attachments[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
+    glDrawBuffers(3, attachments);
 
     // Unbind framebuffer
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -1268,11 +1328,14 @@ int main()
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
         
-        gameTime += deltaTime;
-        enemySpawnAccumulator += deltaTime;
+        if (!playerDead)
+        {
+            gameTime += deltaTime;
+            enemySpawnAccumulator += deltaTime;
+        }
 
         float enemySpawnInterval = std::max(minEnemySpawnInterval, initialEnemySpawnInterval - (gameTime * enemySpawnRampRate));
-        if (enemySpawnAccumulator >= enemySpawnInterval)
+        if (!playerDead && enemySpawnAccumulator >= enemySpawnInterval)
         {
             enemySpawnAccumulator = 0.0f;
             Enemy newEnemy;
@@ -1282,12 +1345,35 @@ int main()
         }
 
         processInput(window);
-        
-        updatePlayerController();
-        updateEnemy();
 
-            // Update fire particles each frame so they spawn and animate naturally
-            updateFireParticles(deltaTime);
+        if (restartRequested)
+            resetGameState(window);
+        
+        if (!playerDead)
+        {
+            updatePlayerController();
+            updateEnemy();
+        }
+
+        if (!playerDead && playerHealth <= 0.0f)
+        {
+            playerDead = true;
+            gamePaused = true;
+            playerVelocity = glm::vec3(0.0f);
+
+            std::stringstream title;
+            title << "GAME OVER | Score: " << playerScore << " | Survived: " << static_cast<int>(gameTime)
+                  << "s | Press R to restart";
+            glfwSetWindowTitle(window, title.str().c_str());
+
+            std::cout << "Player died. Press R to restart." << std::endl;
+        }
+
+        // Update fire particles each frame so they spawn and animate naturally
+        updateFireParticles(deltaTime);
+
+        if (!playerDead)
+        {
             // Update thrown fireballs
             for (size_t i = 0; i < fireballs.size(); ) {
                 Fireball& fireball = fireballs[i];
@@ -1397,6 +1483,7 @@ int main()
 
                 ++i;
             }
+            }
 
         // -- 1) Render scene to depth map from light's POV (shadow map) --
         // Position the sun past the northeast corner of the arena
@@ -1495,6 +1582,7 @@ int main()
         int lightLoc = glGetUniformLocation(activeShader, "lightDir");
         int viewPosLoc = glGetUniformLocation(activeShader, "viewPos");
         int objectColorLoc = glGetUniformLocation(activeShader, "objectColor");
+        int objectIdLoc = glGetUniformLocation(activeShader, "objectId");
 
         // Matrices
         glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
@@ -1517,6 +1605,7 @@ int main()
         glUniformMatrix4fv(glGetUniformLocation(activeShader, "lightSpaceMatrix"), 1, GL_FALSE, glm::value_ptr(lightSpaceMatrix));
 
         // Arena floor
+        glUniform1f(objectIdLoc, 0.10f);
         glUniform3f(objectColorLoc, 0.28f, 0.28f, 0.30f);
         plane.draw();
 
@@ -1528,6 +1617,7 @@ int main()
         wallModel = glm::scale(wallModel, glm::vec3(100.0f, 5.0f, 1.0f));
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(wallModel));
         glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(wallModel)))));
+        glUniform1f(objectIdLoc, 0.11f);
         arenaBlock.draw();
 
         wallModel = glm::mat4(1.0f);
@@ -1535,6 +1625,7 @@ int main()
         wallModel = glm::scale(wallModel, glm::vec3(100.0f, 5.0f, 1.0f));
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(wallModel));
         glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(wallModel)))));
+        glUniform1f(objectIdLoc, 0.11f);
         arenaBlock.draw();
 
         wallModel = glm::mat4(1.0f);
@@ -1542,6 +1633,7 @@ int main()
         wallModel = glm::scale(wallModel, glm::vec3(1.0f, 5.0f, 100.0f));
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(wallModel));
         glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(wallModel)))));
+        glUniform1f(objectIdLoc, 0.11f);
         arenaBlock.draw();
 
         wallModel = glm::mat4(1.0f);
@@ -1549,6 +1641,7 @@ int main()
         wallModel = glm::scale(wallModel, glm::vec3(1.0f, 5.0f, 100.0f));
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(wallModel));
         glUniformMatrix3fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(glm::mat3(glm::transpose(glm::inverse(wallModel)))));
+        glUniform1f(objectIdLoc, 0.11f);
         arenaBlock.draw();
 
         // Sun position: reuse `sunPos` computed earlier for the depth pass
@@ -1568,13 +1661,15 @@ int main()
 
 		// Sun color (yellow-ish glow)
 		glUniform3f(glGetUniformLocation(emissiveShader, "color"), 1.0f, 0.9f, 0.3f);
+        glUniform1f(glGetUniformLocation(emissiveShader, "objectId"), 0.20f);
 
 		// Draw sun mesh
 		sun.draw();
 
         // Draw enemy as a red emissive sphere
-        for (const auto& enemy : enemies)
+        for (size_t enemyIndex = 0; enemyIndex < enemies.size(); ++enemyIndex)
         {
+            const auto& enemy = enemies[enemyIndex];
             if (!enemy.active)
                 continue;
 
@@ -1585,6 +1680,8 @@ int main()
             glUniformMatrix4fv(glGetUniformLocation(emissiveShader, "view"), 1, GL_FALSE, glm::value_ptr(view));
             glUniformMatrix4fv(glGetUniformLocation(emissiveShader, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
             glUniform3f(glGetUniformLocation(emissiveShader, "color"), 2.2f, 0.25f, 0.15f);
+            float enemyId = 0.20f + (static_cast<float>((enemyIndex % 120) + 1) / 128.0f);
+            glUniform1f(glGetUniformLocation(emissiveShader, "objectId"), enemyId);
             enemyMesh.draw();
             glUseProgram(shader);
         }
@@ -1602,6 +1699,7 @@ int main()
             glUniformMatrix4fv(glGetUniformLocation(emissiveShader, "view"), 1, GL_FALSE, glm::value_ptr(view));
             glUniformMatrix4fv(glGetUniformLocation(emissiveShader, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
             glUniform3f(glGetUniformLocation(emissiveShader, "color"), 4.0f, 1.6f, 0.2f);
+            glUniform1f(glGetUniformLocation(emissiveShader, "objectId"), 0.70f);
             sun.draw();
             glUseProgram(shader);
         }
@@ -1657,7 +1755,7 @@ int main()
         glUniform1f(glGetUniformLocation(screenShader, "healthRatio"), playerHealth / playerMaxHealth);
         glUniform1i(glGetUniformLocation(screenShader, "scoreValue"), playerScore);
         glUniform1i(glGetUniformLocation(screenShader, "timeValue"), static_cast<int>(gameTime));
-        glUniform1i(glGetUniformLocation(screenShader, "paused"), gamePaused ? 1 : 0);
+        glUniform1i(glGetUniformLocation(screenShader, "paused"), (gamePaused || playerDead) ? 1 : 0);
         glUniform2f(glGetUniformLocation(screenShader, "mousePos"), mousePosition.x, mousePosition.y);
 
         // Bind normal and scene depth for edge detection
@@ -1665,12 +1763,16 @@ int main()
         glBindTexture(GL_TEXTURE_2D, normalBuffer);
         glActiveTexture(GL_TEXTURE3);
         glBindTexture(GL_TEXTURE_2D, sceneDepth);
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_2D, objectIdBuffer);
         glUniform1i(glGetUniformLocation(screenShader, "normalMap"), 2);
         glUniform1i(glGetUniformLocation(screenShader, "depthMap"), 3);
+        glUniform1i(glGetUniformLocation(screenShader, "objectIdMap"), 4);
         // Edge detection settings
         glUniform1i(glGetUniformLocation(screenShader, "edgeEnabled"), edgeEnabled ? 1 : 0);
         glUniform1f(glGetUniformLocation(screenShader, "edgeDepthThreshold"), 0.006);
         glUniform1f(glGetUniformLocation(screenShader, "edgeNormalThreshold"), 0.25);
+        glUniform1f(glGetUniformLocation(screenShader, "edgeIdThreshold"), 0.0001f);
         glUniform1f(glGetUniformLocation(screenShader, "edgeStrength"), 1.0);
 
         // Render fullscreen quad with HDR scene + blurred texture
