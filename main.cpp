@@ -7,6 +7,12 @@
 #include <vector>
 #include <cstdlib>
 #include <ctime>
+#include <string>
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 
 #include "Mesh.h"
 #include "Plane.h"
@@ -653,7 +659,33 @@ void resizeRenderTargets(int width, int height)
 // -------- File loader --------
 std::string readFile(const char* path)
 {
-    std::ifstream file(path);
+    std::ifstream file(path, std::ios::in | std::ios::binary);
+
+    // If that fails, walk up from the executable directory and look for the shader file.
+    // This keeps the game working when launched directly from the .exe.
+    if (!file.is_open())
+    {
+        char exePath[MAX_PATH] = { 0 };
+        DWORD len = GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+        if (len > 0)
+        {
+            std::string exeDir(exePath);
+            size_t lastSlash = exeDir.find_last_of("\\/");
+            if (lastSlash != std::string::npos)
+                exeDir = exeDir.substr(0, lastSlash);
+
+            for (int i = 0; i < 5 && !file.is_open(); ++i)
+            {
+                std::string candidate = exeDir + "\\" + path;
+                file.open(candidate.c_str(), std::ios::in | std::ios::binary);
+
+                size_t nextSlash = exeDir.find_last_of("\\/");
+                if (nextSlash == std::string::npos)
+                    break;
+                exeDir = exeDir.substr(0, nextSlash);
+            }
+        }
+    }
 
     if (!file.is_open())
     {

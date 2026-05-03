@@ -12,6 +12,7 @@ Project_Template/
 Debug/
 Release/
 Labs/
+Game/
 
 # MSBuild / intermediates
 *.ilk
