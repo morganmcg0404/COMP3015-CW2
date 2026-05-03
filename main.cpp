@@ -23,10 +23,11 @@ void spawnFireExplosion(const glm::vec3& position);
 void spawnRandomEnemy(Enemy& enemy);
 float randFloat();
 void resetGameState(GLFWwindow* window);
+void resizeRenderTargets(int width, int height);
 
 // Resolution constants
-const int windowWidth = 1920;
-const int windowHeight = 1080;
+int windowWidth = 1920;
+int windowHeight = 1080;
 
 // Camera
 float lastX = windowWidth / 2.0f;
@@ -579,7 +580,42 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
 // -------- Resize --------
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
+    if (width <= 0 || height <= 0)
+        return;
+
+    windowWidth = width;
+    windowHeight = height;
     glViewport(0, 0, width, height);
+    resizeRenderTargets(width, height);
+}
+
+void resizeRenderTargets(int width, int height)
+{
+    if (width <= 0 || height <= 0)
+        return;
+
+    glBindTexture(GL_TEXTURE_2D, colorBuffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
+
+    glBindTexture(GL_TEXTURE_2D, normalBuffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
+
+    glBindTexture(GL_TEXTURE_2D, objectIdBuffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
+
+    glBindTexture(GL_TEXTURE_2D, sceneDepth);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, width, height, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+
+    glBindTexture(GL_TEXTURE_2D, brightBuffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
+
+    for (unsigned int i = 0; i < 2; ++i)
+    {
+        glBindTexture(GL_TEXTURE_2D, pingpongColorbuffers[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
+    }
+
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 // -------- File loader --------
@@ -1035,9 +1071,11 @@ int main()
 
     std::srand(static_cast<unsigned int>(std::time(nullptr)));
 
-    // Set window hints for borderless fullscreen
-    glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    // Use a normal windowed mode window and maximize it for a fullscreen-like layout.
+    // This is often easier for Windows capture/recording tools to grab correctly.
+    glfwWindowHint(GLFW_DECORATED, GLFW_TRUE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+    glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
 
     GLFWwindow* window = glfwCreateWindow(windowWidth, windowHeight, "Scene", NULL, NULL);
     if (!window)
@@ -1054,6 +1092,10 @@ int main()
     }
 
     glfwMakeContextCurrent(window);
+
+    glfwGetFramebufferSize(window, &windowWidth, &windowHeight);
+    lastX = windowWidth / 2.0f;
+    lastY = windowHeight / 2.0f;
 
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
     {

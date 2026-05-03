@@ -117,7 +117,9 @@ void main()
 
     // Cross-shaped crosshair in the center of the screen, corrected for aspect ratio
     vec2 p = TexCoords - vec2(0.5);
-    p.x *= 16.0 / 9.0;
+    vec2 sceneSize = vec2(textureSize(scene, 0));
+    float aspect = sceneSize.x / max(sceneSize.y, 1.0);
+    p.x *= aspect;
 
     float hLine = step(abs(p.y), 0.0015) * step(abs(p.x), 0.012);
     float vLine = step(abs(p.x), 0.0015) * step(abs(p.y), 0.012);
