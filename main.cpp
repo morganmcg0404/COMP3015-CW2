@@ -125,12 +125,15 @@ std::vector<Fireball> fireballs;
 
 struct Enemy {
     bool active = true;
-    glm::vec3 position = glm::vec3(8.0f, 0.0f, -8.0f);
-    float radius = 0.6f;
+    glm::vec3 position = glm::vec3(8.0f, 5.0f, -8.0f);
+    glm::vec3 velocity = glm::vec3(0.0f, 0.0f, 0.0f);
+    float radius = 1.25f;  // Matches slime base radius
     float health = 3.0f;
     float moveSpeed = 2.2f;
     float proximityTime = 0.0f;  // How long enemy has been in damage range
     float lastDamageTime = -1.0f;  // When damage was last dealt
+    float lastJumpTime = -1.0f;  // When jump was last performed
+    float lastLandTime = -1.0f;  // When enemy last touched the floor
 };
 
 std::vector<Enemy> enemies;
@@ -143,6 +146,13 @@ float enemySpawnAccumulator = 0.0f;
 const float initialEnemySpawnInterval = 8.0f;
 const float minEnemySpawnInterval = 1.5f;
 const float enemySpawnRampRate = 0.025f;
+const float gravity = 9.8f;
+const float floorLevel = 0.0f;
+const float jumpForce = 4.0f;  // Jump velocity (reduced)
+const float jumpCooldown = 0.5f;  // Time after landing before next jump
+const float slimeHitCenterY = 0.625f;
+const float slimeHitRadius = 1.25f;
+const float slimeHitHeight = 1.25f;
 
 unsigned int hdrFBO;
 unsigned int colorBuffer;
@@ -216,15 +226,21 @@ void processInput(GLFWwindow *window)
         if (!enemy.active)
             continue;
 
-        glm::vec3 toEnemy = enemy.position - playerPosition;
+        glm::vec3 enemyCenter = enemy.position + glm::vec3(0.0f, slimeHitCenterY, 0.0f);
+        glm::vec3 toEnemy = enemyCenter - playerPosition;
+        toEnemy.y = 0.0f;
+
         float distance = glm::length(toEnemy);
-        float minDistance = playerRadius + enemy.radius;
+        float minDistance = playerRadius + slimeHitRadius + 0.15f;
 
         if (distance < minDistance && distance > 0.001f)
         {
             // Push player away from enemy
             glm::vec3 pushDirection = glm::normalize(toEnemy);
             playerPosition -= pushDirection * (minDistance - distance);
+
+            // Prevent the enemy from clipping into the player
+            enemy.position += pushDirection * (minDistance - distance) * 0.65f;
         }
     }
 
@@ -432,39 +448,33 @@ void spawnRandomEnemy(Enemy& enemy)
 {
     const float arenaMin = -50.0f;
     const float arenaMax = 50.0f;
-    const float spawnOffset = 2.0f;
+    const float wallBuffer = 6.0f;
     const float minDistanceFromPlayer = 12.0f;
 
     glm::vec3 pos(0.0f);
     for (int attempt = 0; attempt < 12; ++attempt)
     {
-        int side = static_cast<int>(randFloat() * 4.0f) % 4;
+        float minSpawn = arenaMin + wallBuffer;
+        float maxSpawn = arenaMax - wallBuffer;
 
-        switch (side)
-        {
-        case 0: // left
-            pos = glm::vec3(arenaMin + spawnOffset, 0.0f, arenaMin + randFloat() * (arenaMax - arenaMin));
-            break;
-        case 1: // right
-            pos = glm::vec3(arenaMax - spawnOffset, 0.0f, arenaMin + randFloat() * (arenaMax - arenaMin));
-            break;
-        case 2: // bottom
-            pos = glm::vec3(arenaMin + randFloat() * (arenaMax - arenaMin), 0.0f, arenaMin + spawnOffset);
-            break;
-        default: // top
-            pos = glm::vec3(arenaMin + randFloat() * (arenaMax - arenaMin), 0.0f, arenaMax - spawnOffset);
-            break;
-        }
+        pos = glm::vec3(
+            minSpawn + randFloat() * (maxSpawn - minSpawn),
+            0.0f,
+            minSpawn + randFloat() * (maxSpawn - minSpawn)
+        );
 
         if (glm::length((pos + glm::vec3(0.0f, 1.0f, 0.0f)) - playerPosition) >= minDistanceFromPlayer)
             break;
     }
 
     enemy.position = pos;
+    enemy.velocity = glm::vec3(0.0f);
     enemy.health = 3.0f;
     enemy.active = true;
     enemy.proximityTime = 0.0f;
     enemy.lastDamageTime = -1.0f;
+    enemy.lastJumpTime = -1.0f;
+    enemy.lastLandTime = -1.0f;
 }
 
 void updateEnemy()
@@ -477,6 +487,25 @@ void updateEnemy()
         if (!enemy.active)
             continue;
 
+        bool wasOnGround = (enemy.position.y <= floorLevel + 0.01f);
+
+        // Apply gravity
+        enemy.velocity.y -= gravity * deltaTime;
+        enemy.position += enemy.velocity * deltaTime;
+
+        // Clamp to floor (flat bottom of slime touches ground)
+        if (enemy.position.y < floorLevel)
+        {
+            enemy.position.y = floorLevel;
+            enemy.velocity.y = 0.0f;  // Stop falling when hitting ground
+        }
+
+        bool isOnGround = (enemy.position.y <= floorLevel + 0.01f);
+        if (!wasOnGround && isOnGround)
+        {
+            enemy.lastLandTime = gameTime;
+        }
+
         glm::vec3 toPlayer = playerPosition - enemy.position;
         toPlayer.y = 0.0f;
 
@@ -484,16 +513,19 @@ void updateEnemy()
         float minSeparation = playerRadius + enemy.radius + 0.15f;
         float stopDistance = std::max(damageRange * 0.9f, minSeparation);
 
-        // Move toward player, but stop at attack standoff distance so enemies don't push player.
-        if (distance > stopDistance && distance > 0.001f)
+        // Jump toward player whenever they need to move and they're on ground
+        if (isOnGround && distance > stopDistance && distance > 0.001f)
         {
-            glm::vec3 direction = toPlayer / distance;
-            float maxStep = enemy.moveSpeed * deltaTime;
-            float step = std::min(maxStep, distance - stopDistance);
-            enemy.position += direction * step;
+            if (enemy.lastLandTime < 0.0f || (gameTime - enemy.lastLandTime) >= jumpCooldown)
+            {
+                // Calculate jump direction: towards player horizontally, up vertically
+                glm::vec3 jumpDir = glm::normalize(toPlayer);
+                enemy.velocity.x = jumpDir.x * enemy.moveSpeed * 2.0f;  // Horizontal hop towards player
+                enemy.velocity.z = jumpDir.z * enemy.moveSpeed * 2.0f;
+                enemy.velocity.y = jumpForce;  // Reduced jump height
+                enemy.lastJumpTime = gameTime;
+            }
         }
-
-        enemy.position.y = 0.0f;
 
         // Check if enemy is in damage range of player
         float attackDistance = glm::length(glm::vec3(playerPosition.x - enemy.position.x, 0.0f, playerPosition.z - enemy.position.z));
@@ -902,6 +934,106 @@ std::vector<float> createCapsule(float radius, float cylinderHeight, int sectorC
     return vertices;
 }
 
+// Helper function to transform (translate, scale, rotate) vertex data
+std::vector<float> transformVertices(const std::vector<float>& verts, glm::vec3 position, glm::vec3 scale, float rotationY = 0.0f)
+{
+    std::vector<float> result;
+    glm::mat4 transform = glm::translate(glm::mat4(1.0f), position);
+    transform = glm::rotate(transform, rotationY, glm::vec3(0.0f, 1.0f, 0.0f));
+    transform = glm::scale(transform, scale);
+
+    for (size_t i = 0; i < verts.size(); i += 6)
+    {
+        glm::vec4 pos = transform * glm::vec4(verts[i], verts[i + 1], verts[i + 2], 1.0f);
+        glm::vec4 norm = glm::normalize(glm::transpose(glm::inverse(transform)) * glm::vec4(verts[i + 3], verts[i + 4], verts[i + 5], 0.0f));
+
+        result.push_back(pos.x);
+        result.push_back(pos.y);
+        result.push_back(pos.z);
+        result.push_back(norm.x);
+        result.push_back(norm.y);
+        result.push_back(norm.z);
+    }
+
+    return result;
+}
+
+// Create a slime enemy model with flat bottom and rounded top
+std::vector<float> createSlime()
+{
+    std::vector<float> slimeVerts;
+    
+    float radius = 1.25f;  // Base radius
+    int sectorCount = 28;
+    
+    auto emitVertex = [&](const glm::vec3& pos, const glm::vec3& norm)
+    {
+        slimeVerts.push_back(pos.x);
+        slimeVerts.push_back(pos.y);
+        slimeVerts.push_back(pos.z);
+        slimeVerts.push_back(norm.x);
+        slimeVerts.push_back(norm.y);
+        slimeVerts.push_back(norm.z);
+    };
+    
+    // Create a flat bottom disk (from Y=0)
+    for (int i = 0; i < sectorCount; ++i)
+    {
+        float a0 = static_cast<float>(i) / sectorCount * glm::two_pi<float>();
+        float a1 = static_cast<float>(i + 1) / sectorCount * glm::two_pi<float>();
+        
+        glm::vec3 p0(radius * cos(a0), 0.0f, radius * sin(a0));
+        glm::vec3 p1(radius * cos(a1), 0.0f, radius * sin(a1));
+        glm::vec3 center(0.0f, 0.0f, 0.0f);
+        glm::vec3 normal(0.0f, -1.0f, 0.0f);  // Bottom face normal
+        
+        emitVertex(center, normal);
+        emitVertex(p1, normal);
+        emitVertex(p0, normal);
+    }
+    
+    // Rounded top hemisphere (starts from the base perimeter at Y=0)
+    int hemisphereStacks = 14;
+    for (int i = 0; i < hemisphereStacks; ++i)
+    {
+        float theta0 = (static_cast<float>(i) / hemisphereStacks) * (glm::pi<float>() * 0.5f);
+        float theta1 = (static_cast<float>(i + 1) / hemisphereStacks) * (glm::pi<float>() * 0.5f);
+        
+        float r0 = radius * sin(theta0);
+        float y0 = radius * cos(theta0);
+        float r1 = radius * sin(theta1);
+        float y1 = radius * cos(theta1);
+        
+        for (int j = 0; j < sectorCount; ++j)
+        {
+            float a0 = static_cast<float>(j) / sectorCount * glm::two_pi<float>();
+            float a1 = static_cast<float>(j + 1) / sectorCount * glm::two_pi<float>();
+            
+            glm::vec3 p0(r0 * cos(a0), y0, r0 * sin(a0));
+            glm::vec3 p1(r0 * cos(a1), y0, r0 * sin(a1));
+            glm::vec3 p2(r1 * cos(a0), y1, r1 * sin(a0));
+            glm::vec3 p3(r1 * cos(a1), y1, r1 * sin(a1));
+            
+            glm::vec3 n0 = glm::normalize(glm::vec3(cos(a0), 0.0f, sin(a0)) * sin(theta0) + glm::vec3(0.0f, cos(theta0), 0.0f));
+            glm::vec3 n1 = glm::normalize(glm::vec3(cos(a1), 0.0f, sin(a1)) * sin(theta0) + glm::vec3(0.0f, cos(theta0), 0.0f));
+            glm::vec3 n2 = glm::normalize(glm::vec3(cos(a0), 0.0f, sin(a0)) * sin(theta1) + glm::vec3(0.0f, cos(theta1), 0.0f));
+            glm::vec3 n3 = glm::normalize(glm::vec3(cos(a1), 0.0f, sin(a1)) * sin(theta1) + glm::vec3(0.0f, cos(theta1), 0.0f));
+            
+            // Triangle 1
+            emitVertex(p0, n0);
+            emitVertex(p2, n2);
+            emitVertex(p1, n1);
+            
+            // Triangle 2
+            emitVertex(p1, n1);
+            emitVertex(p2, n2);
+            emitVertex(p3, n3);
+        }
+    }
+    
+    return slimeVerts;
+}
+
 unsigned int quadVAO = 0;
 unsigned int quadVBO;
 unsigned int blurShader;
@@ -1279,8 +1411,8 @@ int main()
     std::vector<float> cubeVerts = createCube(1.0f);
     Mesh arenaBlock(cubeVerts);
 
-    std::vector<float> capsuleVerts = createCapsule(0.65f, 2.4f, 36, 10);
-    Mesh enemyMesh(capsuleVerts);
+    std::vector<float> slimeVerts = createSlime();
+    Mesh enemyMesh(slimeVerts);
 
     // Shader
     unsigned int shader = createShader(
@@ -1472,9 +1604,12 @@ int main()
                 if (!enemy.active)
                     continue;
 
-                glm::vec3 enemyHitCenter = enemy.position + glm::vec3(0.0f, 1.0f, 0.0f);
-                float enemyHitDistance = fireball.radius + 0.9f;
-                if (glm::length(fireball.position - enemyHitCenter) <= enemyHitDistance)
+                glm::vec3 enemyHitCenter = enemy.position + glm::vec3(0.0f, slimeHitCenterY, 0.0f);
+                glm::vec3 hitDelta = fireball.position - enemyHitCenter;
+                float horizontalDistance = glm::length(glm::vec2(hitDelta.x, hitDelta.z));
+                float verticalDistance = glm::abs(hitDelta.y);
+                float enemyHitDistance = fireball.radius + slimeHitRadius + 0.2f;
+                if (horizontalDistance <= enemyHitDistance && verticalDistance <= (slimeHitHeight * 0.5f + fireball.radius + 0.2f))
                 {
                     spawnFireExplosion(fireball.position);
                     enemy.health -= 1.0f;
@@ -1590,8 +1725,8 @@ int main()
         for (const auto& enemy : enemies)
         {
             if (!enemy.active) continue;
-            glm::mat4 enemyModelDepth = glm::translate(glm::mat4(1.0f), enemy.position + glm::vec3(0.0f, 1.0f, 0.0f));
-            enemyModelDepth = glm::scale(enemyModelDepth, glm::vec3(0.55f));
+            glm::mat4 enemyModelDepth = glm::translate(glm::mat4(1.0f), enemy.position);
+            enemyModelDepth = glm::scale(enemyModelDepth, glm::vec3(1.1f));
             glUniformMatrix4fv(glGetUniformLocation(depthShader, "model"), 1, GL_FALSE, glm::value_ptr(enemyModelDepth));
             enemyMesh.draw();
         }
@@ -1716,12 +1851,12 @@ int main()
                 continue;
 
             glUseProgram(emissiveShader);
-            glm::mat4 enemyModel = glm::translate(glm::mat4(1.0f), enemy.position + glm::vec3(0.0f, 1.0f, 0.0f));
-            enemyModel = glm::scale(enemyModel, glm::vec3(0.55f));
+            glm::mat4 enemyModel = glm::translate(glm::mat4(1.0f), enemy.position);
+            enemyModel = glm::scale(enemyModel, glm::vec3(1.1f));
             glUniformMatrix4fv(glGetUniformLocation(emissiveShader, "model"), 1, GL_FALSE, glm::value_ptr(enemyModel));
             glUniformMatrix4fv(glGetUniformLocation(emissiveShader, "view"), 1, GL_FALSE, glm::value_ptr(view));
             glUniformMatrix4fv(glGetUniformLocation(emissiveShader, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
-            glUniform3f(glGetUniformLocation(emissiveShader, "color"), 2.2f, 0.25f, 0.15f);
+            glUniform3f(glGetUniformLocation(emissiveShader, "color"), 0.5f, 1.0f, 1.8f);
             float enemyId = 0.20f + (static_cast<float>((enemyIndex % 120) + 1) / 128.0f);
             glUniform1f(glGetUniformLocation(emissiveShader, "objectId"), enemyId);
             enemyMesh.draw();
