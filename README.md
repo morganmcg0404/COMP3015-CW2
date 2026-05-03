@@ -54,7 +54,7 @@ Compared with a standard OpenGL coursework scene, this prototype is more distinc
 ### Repository and video
 
 - **GitHub repository:** [GitHub repo link](https://github.com/morganmcg0404/COMP3015-CW2)
-- **Unlisted YouTube video:** [YouTube video link](https://youtu.be/<your-unlisted-video>)
+- **Unlisted YouTube video:** [YouTube video link](https://www.youtube.com/watch?v=SdSJ4mwgcvk)
 
 ## Features
 
